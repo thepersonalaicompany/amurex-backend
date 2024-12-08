@@ -97,22 +97,36 @@ python index.py
 
 ### Option 2: Docker
 
-0. Change directory to `server`:
+1. Clone the repository to your server
 
 ```
-cd server
+git clone https://github.com/thepersonalaicompany/amurex-backend
 ```
 
-1. Build the Docker image:
+2. Change directory to `server`:
+
+```
+cd amurex/backend/server
+```
+
+3. Edit the .env file
+
+   Add the various keys for the service
+   
+```
+nano .env
+```
+
+4. Build the Docker image:
 
 ```
 docker build -t amurex-backend .
 ```
 
-2. Run the Docker container:
+5. Run the Docker container:
 
-```bash
-docker run -d --name amurex-backend 
+```
+docker run -d --name amurex-backend --restart unless-stopped amurex-backend:latest
 ```
 
 Alternatively, use docker compose:
@@ -120,7 +134,6 @@ Alternatively, use docker compose:
 ```bash
 docker compose up
 ```
-
 
 <div align="center">
   Made with ❤️ for better <del>meetings</del> life
