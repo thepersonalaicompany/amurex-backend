@@ -97,7 +97,7 @@ python index.py
 
 ### Option 2: Docker
 
-1. Clone the repository to your server
+1. Clone the repository
 
 ```
 git clone https://github.com/thepersonalaicompany/amurex-backend
