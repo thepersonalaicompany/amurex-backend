@@ -103,7 +103,7 @@ python index.py
 git clone https://github.com/thepersonalaicompany/amurex-backend
 ```
 
-2. Change directory to `server`:
+2. Change directory to `amurex-backend`:
 
 ```
 cd amurex-backend
