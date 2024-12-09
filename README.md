@@ -106,7 +106,7 @@ git clone https://github.com/thepersonalaicompany/amurex-backend
 2. Change directory to `server`:
 
 ```
-cd amurex/backend/server
+cd amurex-backend
 ```
 
 3. Edit the .env file
