@@ -114,7 +114,7 @@ cd amurex/backend/server
    Add the various keys for the service
    
 ```
-nano .env
+vim .env
 ```
 
 4. Build the Docker image:
