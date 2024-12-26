@@ -565,7 +565,7 @@ def check_suggestion(request_dict):
                     "type": "no_file_found"
                     }
 
-            logging.info("This is the suggestion count: %s ", sb_response["suggestion_count"])
+            logger.info("This is the suggestion count: %s ", sb_response["suggestion_count"])
             if int(sb_response["suggestion_count"]) == 10:
                 return {
                     "files_found": True,
