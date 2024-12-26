@@ -23,6 +23,14 @@ from robyn import Robyn, ALLOW_CORS, WebSocket, Response, Request
 from robyn.types import Body
 import sentry_sdk
 from sentry_sdk import capture_exception
+import logging
+
+# Configure logging at the start of the file
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN"),
@@ -121,6 +129,7 @@ def parse_array_string(s):
 
 @app.exception
 def handle_exception(error):
+    logger.error(f"Application error: {str(error)}", exc_info=True)
     capture_exception(error)
     return Response(status_code=500, description=f"error msg: {error}", headers={})
 
@@ -339,18 +348,23 @@ def embed_text(text):
 async def upload_meeting_file(request):
     meeting_id = request.path_params.get("meeting_id")
     user_id = request.path_params.get("user_id")
-    # call_type = int(request.path_params.get("call_type"))
+    logger.info(f"Processing file upload for meeting_id: {meeting_id}, user_id: {user_id}")
+
     files = request.files
     file_name = list(files.keys())[0] if len(files) > 0 else None
 
     if not file_name:
+        logger.warning("No file provided in request")
         return Response(status_code=400, description="No file provided", headers={})
 
     # Check file size limit (20MB)
-    file_contents = files[file_name] # bytearray of file
+    file_contents = files[file_name]
     file_limit = 20 * 1024 * 1024
-    if len(file_contents) > file_limit: # 20MB in bytes
+    if len(file_contents) > file_limit:
+        logger.warning(f"File size {len(file_contents)} exceeds limit of {file_limit}")
         return Response(status_code=413, description="File size exceeds 20MB limit", headers={})
+
+    logger.info(f"Processing file: {file_name}")
     
     # Generate unique filename
     file_extension = file_name.split(".")[-1]
@@ -423,11 +437,15 @@ async def generate_actions(request, body: ActionRequest):
     transcript = data["transcript"]
     cache_key = get_cache_key(transcript)
     
+    logger.info(f"Generating actions for transcript with cache key: {cache_key}")
+    
     # Try to get from cache
     cached_result = redis_client.get(cache_key)
     if cached_result:
+        logger.info("Retrieved result from cache")
         return json.loads(cached_result)
     
+    logger.info("Cache miss - generating new results")
     # Generate new results if not in cache
     action_items = extract_action_items(transcript)
     notes_content = generate_notes(transcript)
@@ -547,7 +565,8 @@ def check_suggestion(request_dict):
                     "type": "no_file_found"
                     }
 
-            if int(sb_response["suggestion_count"]) == 4:
+            logging.info("This is the suggestion count: %s ", sb_response["suggestion_count"])
+            if int(sb_response["suggestion_count"]) == 10:
                 return {
                     "files_found": True,
                     "generated_suggestion": None,
@@ -643,10 +662,12 @@ def check_suggestion(request_dict):
 async def on_connect(ws, msg):
     meeting_id = ws.query_params.get("meeting_id")
     user_id = ws.query_params.get("user_id")
+    logger.info(f"WebSocket connection request - meeting_id: {meeting_id}, user_id: {user_id}")
 
     primary_user_key = f"primary_user:{meeting_id}"
     try:
         if not redis_client.exists(primary_user_key):
+            logger.info(f"Setting primary user for meeting {meeting_id}")
             redis_client.set(primary_user_key, ws.id)
 
         # Create new meeting metric entry when first user connects
@@ -657,7 +678,7 @@ async def on_connect(ws, msg):
                 "meeting_start_time": time.time()
             }).execute()
     except Exception as e:
-        print(f"Error creating meeting metric entry: {e}")
+        logger.error(f"Error in WebSocket connection: {str(e)}", exc_info=True)
         return ""
     else:
         # Update existing meeting entry to add new user
@@ -698,8 +719,11 @@ async def on_message(ws, msg):
         data = msg_data.get("data")
         type_ = msg_data.get("type")
 
+        logger.info(f"WebSocket message received - type: {type_}, meeting_id: {meeting_id}")
+
         # Safely access the data field
         if not isinstance(msg_data, dict) or data is None or type_ is None:
+            logger.warning("Invalid message format received")
             return ""
 
         if type_ == "transcript_update":
@@ -732,8 +756,10 @@ async def on_message(ws, msg):
             return json.dumps(response)
 
     except json.JSONDecodeError as e:
+        logger.error(f"JSON parsing error: {str(e)}", exc_info=True)
         return f"JSON parsing error: {e}"
     except Exception as e:
+        logger.error(f"WebSocket message error: {str(e)}", exc_info=True)
         return f"WebSocket error: {e}"
 
     return ""
