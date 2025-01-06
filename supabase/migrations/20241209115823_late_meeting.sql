@@ -2,8 +2,12 @@ CREATE TABLE late_meeting (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     meeting_id TEXT NOT NULL,
     user_ids UUID[] NOT NULL,
-    meeting_start_time DOUBLE PRECISION NOT NULL,
+    meeting_start_time FLOAT8 NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    transcript TEXT,
+    summary TEXT,
+    action_items TEXT,
+    meeting_title TEXT,
     UNIQUE(meeting_id)
 );
 

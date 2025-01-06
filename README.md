@@ -29,10 +29,14 @@ This is the backend for the entire Amurex project. You can use it to host your o
 - Redis server
 - Docker (optional)
 - Required API keys:
-  - OpenAI API key
-  - Groq API key
   - Supabase credentials
-  - MixedBread AI key
+  - OpenAI API key (optional if using CLIENT_MODE=LOCAL)
+  - Groq API key (optional if using CLIENT_MODE=LOCAL)
+  - MixedBread AI key (optional if using CLIENT_MODE=LOCAL)
+
+Note: When using CLIENT_MODE=LOCAL, you'll need to:
+- Install Ollama for local model inference
+- Install fast-embed for local embeddings generation
 
 ## Supabase Setup
 
@@ -57,18 +61,23 @@ You can find the SQL for this table in `supabase/migrations/20241201195715_meeti
 Create a `.env` file in the root directory with the following variables:
 
 ```env
-OPENAI_API_KEY=your_openai_key
-GROQ_API_KEY=your_groq_key
+# Required
 SUPABASE_URL=your_project_url
 SUPABASE_ANON_KEY=your_anon_key
 REDIS_USERNAME=your_redis_username
 REDIS_URL=your_redis_host
 REDIS_PASSWORD=your_redis_password
 REDIS_PORT=your_redis_port
-MXBAI_API_KEY=your_mxbai_api_key
 RESEND_API_KEY=your_resend_api_key
 RESEND_NOREPLY=your_resend_noreply
-CLIENT_MODE=ONLINE #set LOCAL to run local Ollama instead of OpenAI and Groq API
+
+# Optional if CLIENT_MODE=LOCAL
+OPENAI_API_KEY=your_openai_key
+GROQ_API_KEY=your_groq_key
+MXBAI_API_KEY=your_mxbai_api_key
+
+# Mode Selection
+CLIENT_MODE=ONLINE #set LOCAL to run local Ollama instead of OpenAI and Groq API and fast-embed instead of mixedbread
 ```
 
 ## Installation
