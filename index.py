@@ -933,26 +933,49 @@ async def on_message(ws, msg):
 
         if type_ == "transcript_update":
             primary_user_key = f"primary_user:{meeting_id}"
+            meeting_key = f"meeting:{meeting_id}"
             
-            if not redis_client.exists(primary_user_key):
-                redis_client.set(primary_user_key, ws.id)
+            try:
+                # Use pipeline for primary user check and set
+                pipe = redis_client.pipeline()
+                pipe.exists(primary_user_key)
+                pipe.get(primary_user_key)
+                exists, primary_user = pipe.execute()
 
-
-            if redis_client.get(primary_user_key).decode() == ws.id:
-                # Safely access transcript data
-                if data is None:
-                    return ""
-                    
-                transcript = data
-                current_transcript = redis_client.get(f"meeting:{meeting_id}")
-                
-                if current_transcript:
-                    current_transcript = current_transcript.decode()
+                if not exists:
+                    redis_client.set(primary_user_key, ws.id)
+                    is_primary = True
                 else:
-                    current_transcript = ""
+                    is_primary = primary_user.decode() == ws.id
 
-                updated_transcript = current_transcript + transcript
-                redis_client.setex(f"meeting:{meeting_id}", CACHE_EXPIRATION, updated_transcript)
+                # Only proceed if this is the primary user
+                if not is_primary or data is None:
+                    return ""
+
+                # Use pipeline for transcript operations
+                pipe = redis_client.pipeline()
+                pipe.get(meeting_key)
+                pipe.exists(meeting_key)
+                current_transcript, exists = pipe.execute()
+
+                # Combine existing and new transcript
+                updated_transcript = (current_transcript.decode() if exists else "") + data
+
+                # Set updated transcript with expiration
+                redis_client.setex(
+                    name=meeting_key,
+                    time=CACHE_EXPIRATION,
+                    value=updated_transcript
+                )
+
+                logger.debug(f"Successfully updated transcript for meeting {meeting_id}")
+
+            except redis.RedisError as e:
+                logger.error(f"Redis error during transcript update: {str(e)}", exc_info=True)
+                capture_exception(e)
+            except Exception as e:
+                logger.error(f"Unexpected error during transcript update: {str(e)}", exc_info=True)
+                capture_exception(e)
 
         elif type_ == "check_suggestion":
             data["meeting_id"] = meeting_id
