@@ -33,9 +33,9 @@ load_dotenv()
 
 
 class AIClientAdapter:
-    def __init__(self, client_mode):
+    def __init__(self, client_mode, ollama_url):
         self.client_mode = client_mode
-        self.ollama_url = "http://localhost:11434/api/chat"
+        self.ollama_url = f"{ollama_url}/api/chat"
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -104,7 +104,8 @@ class EmbeddingAdapter:
 
 
 client_mode = os.getenv("CLIENT_MODE")
-ai_client = AIClientAdapter(client_mode)
+ollama_url = os.getenv("OLLAMA_ENDPOINT")
+ai_client = AIClientAdapter(client_mode, ollama_url)
 embedding_client = EmbeddingAdapter(client_mode)
 
 app = Robyn(__file__)
