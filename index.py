@@ -106,7 +106,7 @@ class EmbeddingAdapter:
 
 
 client_mode = os.getenv("CLIENT_MODE")
-ollama_url = os.getenv("OLLAMA_ENDPOINT")
+ollama_url = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434")
 ai_client = AIClientAdapter(client_mode, ollama_url)
 embedding_client = EmbeddingAdapter(client_mode)
 

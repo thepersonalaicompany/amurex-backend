@@ -79,7 +79,7 @@ MXBAI_API_KEY=your_mxbai_api_key
 # Mode Selection
 CLIENT_MODE=ONLINE #set LOCAL to run local Ollama instead of OpenAI and Groq API and fast-embed instead of mixedbread
 
-#Ollama mode : MANDATORY env variables
+#Ollama mode : 
 OLLAMA_ENDPOINT=<your_ollama_endpoint>
 ```
 
