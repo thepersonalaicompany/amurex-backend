@@ -21,6 +21,7 @@ from PyPDF2 import PdfReader
 from robyn import Robyn, ALLOW_CORS, WebSocket, Response, Request
 from robyn.types import Body
 import logging
+from database.db_manager import DatabaseManager
 
 # Configure logging at the start of the file
 logging.basicConfig(
@@ -33,6 +34,8 @@ load_dotenv()
 
 websocket_redis_clients = {}  # Global map to store Redis clients
 
+# Initialize database manager
+db = DatabaseManager()
 
 class AIClientAdapter:
     def __init__(self, client_mode):
@@ -859,69 +862,39 @@ def check_suggestion(request_dict):
         return {"error": str(e)}
     except Exception as e:
         return {"error": f"An unexpected error occurred. Please try again later. bitch: {e}"}
+
+
 @websocket.on("connect")
 async def on_connect(ws, msg):
     meeting_id = ws.query_params.get("meeting_id")
     user_id = ws.query_params.get("user_id")
     logger.info(f"WebSocket connection request - meeting_id: {meeting_id}, user_id: {user_id}")
 
-    # Create Redis connection for this websocket
-    redis_url = f"rediss://{redis_user}:{redis_password}@{redis_host}:{redis_port}"
-    redis_client = redis.Redis.from_url(
-        redis_url,
-        decode_responses=True,
-        socket_timeout=5,
-        socket_connect_timeout=5,
-        socket_keepalive=True,
-        health_check_interval=30,
-        retry_on_timeout=True
-    )
-    websocket_redis_clients[ws.id] = redis_client
-
     try:
-        if not redis_client.exists(f"meeting:{meeting_id}"):
-            logger.info(f"Creating a meeting id in redis: {meeting_id} and user_id: {user_id}")
-            redis_client.set(f"meeting:{meeting_id}", "")
-    except Exception as e:
-        logger.error(f"Error in setting meeting:{meeting_id} in Redis: {str(e)}", exc_info=True)
-        pass
+        # Create meeting if it doesn't exist
+        db.create_meeting(meeting_id)
+        
+        if user_id and user_id not in ("undefined", "null"):
+            # Add connection to database
+            db.add_connection(ws.id, meeting_id, user_id)
+            
+            # Set as primary user if none exists
+            if not db.get_primary_user(meeting_id):
+                db.set_primary_user(meeting_id, ws.id)
+                logger.info(f"Set primary user for meeting {meeting_id}: {ws.id}")
 
-    primary_user_key = f"primary_user:{meeting_id}"
-    if user_id is not None and user_id != "undefined" and user_id != "null":
-        if not redis_client.exists(primary_user_key):
-            logger.info(f"Setting primary user for meeting {meeting_id}")
-            try:
-                redis_client.set(primary_user_key, ws.id)
-            except Exception as e:
-                logger.error(f"Error in setting primary_user:{meeting_id}: {str(e)}", exc_info=True)
-                pass
-
-            try:
-                # Create new meeting metric entry when first user connects
-                result = supabase.table("late_meeting").upsert({
+                # Create new meeting metric entry
+                try:
+                    result = supabase.table("late_meeting").upsert({
                         "meeting_id": meeting_id,
                         "user_ids": [user_id],
                         "meeting_start_time": time.time()
                     }, on_conflict="meeting_id").execute()
-            except Exception as e:
-                logger.error(f"Error in creating new late_meeting ({meeting_id}) record: {str(e)}", exc_info=True)
-                pass
-        else:
-            logger.info(f"Updating existing late_meeting ({meeting_id}) record to add new user ({user_id})")
-            
-            # Update existing late_meeting record to add new user
-            try:
-                user_ids = supabase.table("late_meeting").select("user_ids").eq("meeting_id", meeting_id).execute().data
-                if user_ids:
-                    user_ids = user_ids[0]["user_ids"]
-                else:
-                    user_ids = []
-                new_user_ids = set(user_ids + [user_id])
-                
-                result = supabase.table("late_meeting").update({"user_ids": list(new_user_ids)}, count="exact").eq("meeting_id", meeting_id).execute()
-            except Exception as e:
-                logger.error(f"Error in updating existing late_meeting ({meeting_id}) record: {str(e)}", exc_info=True)
-                pass
+                except Exception as e:
+                    logger.error(f"Error creating late_meeting record: {str(e)}", exc_info=True)
+
+    except Exception as e:
+        logger.error(f"Error in connection handling: {str(e)}", exc_info=True)
 
     return ""
 
@@ -929,7 +902,6 @@ async def on_connect(ws, msg):
 @websocket.on("message")
 async def on_message(ws, msg):
     try:
-        # First ensure the message is properly parsed as JSON
         if isinstance(msg, str):
             msg_data = json.loads(msg)
         else:
@@ -941,63 +913,28 @@ async def on_message(ws, msg):
 
         logger.info(f"WebSocket message received - type: {type_}, meeting_id: {meeting_id}")
 
-        # Safely access the data field
         if not isinstance(msg_data, dict) or data is None or type_ is None:
             logger.warning("Invalid message format received")
             return ""
 
         if type_ == "transcript_update":
-            primary_user_key = f"primary_user:{meeting_id}"
-            meeting_key = f"meeting:{meeting_id}"
-            
             try:
-                # Safely get Redis client for this websocket
-                redis_client = websocket_redis_clients.get(ws.id)
-                if not redis_client:
-                    # Recreate Redis client if missing
-                    redis_url = f"rediss://{redis_user}:{redis_password}@{redis_host}:{redis_port}"
-                    redis_client = redis.Redis.from_url(
-                        redis_url,
-                        decode_responses=True,
-                        socket_timeout=5,
-                        socket_connect_timeout=5,
-                        socket_keepalive=True,
-                        health_check_interval=30,
-                        retry_on_timeout=True
-                    )
-                    websocket_redis_clients[ws.id] = redis_client
-                    logger.info(f"Created new Redis client for websocket {ws.id}")
-
-                # Check if primary user exists and get value
-                primary_user = redis_client.get(primary_user_key)
-
-                if primary_user is None:
-                    redis_client.set(primary_user_key, ws.id)
-                    is_primary = True
-                else:
-                    is_primary = primary_user == ws.id
-                    is_primary = primary_user == ws.id
-
-                # Only proceed if this is the primary user
-                if not is_primary or data is None:
+                # Check if this is the primary user
+                primary_user = db.get_primary_user(meeting_id)
+                if primary_user != ws.id or not data:
                     return ""
 
-                # Get current transcript
-                current_transcript = redis_client.get(meeting_key)
+                # Get current transcript and update
+                meeting = db.get_meeting(meeting_id)
+                current_transcript = meeting.get('transcript', '') if meeting else ''
+                updated_transcript = current_transcript + data
+                
+                # Update transcript in database
+                db.update_transcript(meeting_id, updated_transcript)
+                logger.debug(f"Updated transcript for meeting {meeting_id}")
 
-                # Combine existing and new transcript
-                updated_transcript = (current_transcript if exists else "") + data
-
-                # Set updated transcript with expiration
-                redis_client.setex(
-                    name=meeting_key,
-                    time=CACHE_EXPIRATION,
-                    value=updated_transcript
-                )
-
-                logger.debug(f"Successfully updated transcript for meeting {meeting_id}")
             except Exception as e:
-                logger.warning(f"Error in updating transcript: {str(e)}, {meeting_id}", exc_info=True)
+                logger.error(f"Error updating transcript: {str(e)}", exc_info=True)
                 return ""
 
         elif type_ == "check_suggestion":
@@ -1014,55 +951,18 @@ async def on_message(ws, msg):
 
     return ""
 
-class TrackingRequest(Body):
-    uuid: str
-    event_type: str
-    meeting_id: Optional[str] = None
-
-@app.post("/track")
-async def track(request: Request, body: TrackingRequest):
-    try:
-        data = json.loads(body)
-        uuid = data["uuid"]
-        event_type = data["event_type"]
-        meeting_id = data.get("meeting_id")
-
-        result = supabase.table("analytics").insert({
-            "uuid": uuid,
-            "event_type": event_type,
-            "meeting_id": meeting_id
-        }).execute()
-        return {"result": "success"}
-    except Exception as e:
-        return Response(
-            status_code=500,
-            description=f"Error tracking event: {str(e)}",
-            headers={}
-        )
 
 @websocket.on("close")
 async def close(ws, msg):
-    meeting_id = ws.query_params.get("meeting_id")
-    primary_user_key = f"primary_user:{meeting_id}"
-    
-    # Safely get the Redis client for this websocket
-    redis_client = websocket_redis_clients.get(ws.id)
-    if redis_client:
-        try:
-            # Check if this was the primary user
-            primary_user = redis_client.get(primary_user_key)
-            if primary_user == ws.id:
-                logger.info(f"Closing websocket for primary user: {ws.id}")
-                redis_client.delete(primary_user_key)
-            
-            # Close Redis connection and remove from map
-            redis_client.close()
-            del websocket_redis_clients[ws.id]
-            logger.info(f"Closed Redis connection for websocket {ws.id}")
-        except Exception as e:
-            logger.error(f"Error in closing Redis connection: {str(e)}", exc_info=True)
-    else:
-        logger.warning(f"No Redis client found for websocket {ws.id} during close")
+    try:
+        meeting_id = ws.query_params.get("meeting_id")
+        
+        # Remove connection from database
+        db.remove_connection(ws.id)
+        logger.info(f"Closed connection for websocket {ws.id}")
+        
+    except Exception as e:
+        logger.error(f"Error in closing connection: {str(e)}", exc_info=True)
     
     return ""
 
@@ -1073,19 +973,20 @@ async def get_late_summary(path_params):
     if meeting_id == "undefined":
         return {"late_summary": ""}
 
-    transcript = redis_client.get(f"meeting:{meeting_id}")
-    late_summary = generate_notes(transcript)
+    meeting = db.get_meeting(meeting_id)
+    if not meeting or not meeting['transcript']:
+        return {"late_summary": ""}
 
+    late_summary = generate_notes(meeting['transcript'])
     return {"late_summary": late_summary}
 
 
 @app.get("/check_meeting/:meeting_id")
 async def check_meeting(path_params):
     meeting_id = path_params["meeting_id"]
-    is_meeting = redis_client.get(f"meeting:{meeting_id}")
+    meeting = db.get_meeting(meeting_id)
+    return {"is_meeting": meeting is not None}
 
-    return {"is_meeting": is_meeting is not None}
-    
 
 @app.post("/send_user_email")
 async def send_user_email(request):
