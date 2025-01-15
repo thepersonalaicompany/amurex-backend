@@ -857,6 +857,40 @@ def check_suggestion(request_dict):
         return {"error": f"An unexpected error occurred. Please try again later. bitch: {e}"}
 
 
+async def sync_meeting_with_supabase(meeting_id: str, user_id: str) -> str:
+    """Sync meeting data with Supabase and return meeting object ID"""
+    try:
+        # First check if meeting exists in Supabase
+        meeting_obj = supabase.table("late_meeting")\
+            .select("id, user_ids")\
+            .eq("meeting_id", meeting_id)\
+            .execute().data
+
+        if not meeting_obj:
+            # Create new meeting in Supabase
+            result = supabase.table("late_meeting").upsert({
+                "meeting_id": meeting_id,
+                "user_ids": [user_id],
+                "meeting_start_time": time.time()
+            }, on_conflict="meeting_id").execute()
+            logger.info(f"Created new meeting in Supabase for meeting_id: {meeting_id}")
+            return result.data[0]["id"]
+        else:
+            # Update existing meeting
+            existing_user_ids = meeting_obj[0]["user_ids"] or []
+            if user_id not in existing_user_ids:
+                new_user_ids = list(set(existing_user_ids + [user_id]))
+                result = supabase.table("late_meeting")\
+                    .update({"user_ids": new_user_ids})\
+                    .eq("meeting_id", meeting_id)\
+                    .execute()
+                logger.info(f"Added user {user_id} to existing meeting {meeting_id}")
+            return meeting_obj[0]["id"]
+
+    except Exception as e:
+        logger.error(f"Error in Supabase operation for meeting {meeting_id}: {str(e)}", exc_info=True)
+        raise
+
 @websocket.on("connect")
 async def on_connect(ws, msg):
     meeting_id = ws.query_params.get("meeting_id")
@@ -864,11 +898,11 @@ async def on_connect(ws, msg):
     logger.info(f"WebSocket connection request - meeting_id: {meeting_id}, user_id: {user_id}")
 
     try:
-        # Create meeting if it doesn't exist
+        # Create meeting in SQLite if it doesn't exist
         db.create_meeting(meeting_id)
         
         if user_id and user_id not in ("undefined", "null"):
-            # Add connection to database
+            # Add connection to SQLite database
             db.add_connection(ws.id, meeting_id, user_id)
             
             # Set as primary user if none exists
@@ -876,15 +910,12 @@ async def on_connect(ws, msg):
                 db.set_primary_user(meeting_id, ws.id)
                 logger.info(f"Set primary user for meeting {meeting_id}: {ws.id}")
 
-                # Create new meeting metric entry
-                try:
-                    result = supabase.table("late_meeting").upsert({
-                        "meeting_id": meeting_id,
-                        "user_ids": [user_id],
-                        "meeting_start_time": time.time()
-                    }, on_conflict="meeting_id").execute()
-                except Exception as e:
-                    logger.error(f"Error creating late_meeting record: {str(e)}", exc_info=True)
+            # Sync with Supabase
+            try:
+                meeting_obj_id = await sync_meeting_with_supabase(meeting_id, user_id)
+                logger.info(f"Successfully synced meeting {meeting_id} with Supabase")
+            except Exception as e:
+                logger.error(f"Failed to sync with Supabase: {str(e)}", exc_info=True)
 
     except Exception as e:
         logger.error(f"Error in connection handling: {str(e)}", exc_info=True)

@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import json
 import logging
 from typing import Optional
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -111,5 +112,18 @@ class DatabaseManager:
             cursor.execute(
                 "DELETE FROM websocket_connections WHERE ws_id = ?",
                 (ws_id,)
+            )
+            conn.commit()
+
+    def add_user_to_meeting(self, meeting_id: str, user_id: str):
+        """Add a user to a meeting in SQLite"""
+        with self.get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO websocket_connections (ws_id, meeting_id, user_id)
+                VALUES (?, ?, ?)
+                """,
+                (ws_id, meeting_id, user_id)
             )
             conn.commit() 
