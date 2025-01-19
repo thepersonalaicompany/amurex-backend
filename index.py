@@ -524,7 +524,7 @@ async def end_meeting(request, body: EndMeetingRequest):
         # TODO: figure out why tf are we not sending user_id from the chrome extension
         return {
             "notes_content": generate_notes(transcript),
-            "actions_items": extract_action_items(transcript)
+            "action_items": extract_action_items(transcript)
         }
     
     if not meeting_id:
@@ -533,7 +533,7 @@ async def end_meeting(request, body: EndMeetingRequest):
         
         return {
             "notes_content": notes_content,
-            "actions_items": action_items
+            "action_items": action_items
         }
     
     
@@ -618,7 +618,7 @@ async def end_meeting(request, body: EndMeetingRequest):
         
         return {
             "notes_content": notes_content,
-            "actions_items": action_items
+            "action_items": action_items
         }
 
 
