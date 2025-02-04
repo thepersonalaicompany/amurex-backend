@@ -22,6 +22,7 @@ from robyn.types import Body
 import logging
 from database.db_manager import DatabaseManager
 from functools import lru_cache
+import asyncio
 
 # Configure logging at the start of the file
 logging.basicConfig(
@@ -170,7 +171,7 @@ def extract_action_items(transcript):
 
     # Sending the prompt to the AI model using chat completions
     response = ai_client.chat_completions_create(
-        model="gpt-4o",
+        model="llama-3.3",
         messages=messages,
         temperature=0.2,
         response_format={"type": "json_object"}
@@ -213,7 +214,7 @@ def generate_notes(transcript):
     ]
 
     response = ai_client.chat_completions_create(
-        model="gpt-4o",
+        model="llama-3.3",
         messages=messages,
         temperature=0.2,
         response_format={"type": "json_object"}
@@ -237,7 +238,7 @@ def generate_title(summary):
     ]
 
     response = ai_client.chat_completions_create(
-        model="gpt-4o",
+        model="llama-3.3",
         messages=messages,
         temperature=0.2,
         response_format={"type": "json_object"}
@@ -345,7 +346,7 @@ def send_email(email, email_type, **kwargs):
             >
                 {owner_email} shared their notes with you
                 <div>
-                 ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿
+                 ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿
                 </div>
             </div>
             <body
@@ -661,6 +662,9 @@ def create_memory_object(transcript):
     
     return result
 
+@lru_cache(maxsize=1000)
+def check_memory_enabled(user_id):
+    return supabase.table("users").select("memory_enabled").eq("id", user_id).execute().data[0]["memory_enabled"]
 
 @app.post("/end_meeting")
 async def end_meeting(request, body: EndMeetingRequest):
@@ -691,91 +695,55 @@ async def end_meeting(request, body: EndMeetingRequest):
         }
     
     
-    is_memory_enabled = supabase.table("users").select("memory_enabled").eq("id", user_id).execute().data[0]["memory_enabled"]
+    is_memory_enabled = check_memory_enabled(user_id)
 
-    if is_memory_enabled is True:
-        meeting_obj = supabase.table("late_meeting").select("id, transcript").eq("meeting_id", meeting_id).execute().data
-        if not meeting_obj or len(meeting_obj) == 0 or meeting_obj[0]["transcript"] is None:
-            result = supabase.table("late_meeting").upsert({
-                    "meeting_id": meeting_id,
-                    "user_ids": [user_id],
-                    "meeting_start_time": time.time()
-                }, on_conflict="meeting_id").execute()
-
-            meeting_obj_transcript_exists = None
-            meeting_obj_id = result.data[0]["id"]
-
-        meeting_obj_transcript_exists = meeting_obj[0]["transcript"] # None or str url
-        meeting_obj_id = meeting_obj[0]["id"]
-
-        if not meeting_obj_transcript_exists:
-            unique_filename = f"{uuid.uuid4()}.txt"
-            file_contents = transcript
-            file_bytes = file_contents.encode('utf-8')
-            
-            storage_response = supabase.storage.from_("transcripts").upload(
-                path=unique_filename,
-                file=file_bytes,
-            )
-            file_url = supabase.storage.from_("transcripts").get_public_url(unique_filename)
-            
-            result = supabase.table("late_meeting")\
-                    .update({"transcript": file_url})\
-                    .eq("id", meeting_obj_id)\
-                    .execute()
-
-        memory = supabase.table("memories").select("*").eq("meeting_id", meeting_obj_id).execute().data
-
-        if memory:
-            if memory[0]["content"] and "ACTION_ITEMS" in memory[0]["content"]:
-                summary = memory[0]["content"].split("DIVIDER")[0]
-                action_items = memory[0]["content"].split("DIVIDER")[1]
-
-                result = {
-                    "action_items": action_items,
-                    "notes_content": summary
-                }
-
-                return result
-        else:
-            memory_obj = create_memory_object(transcript=transcript)
-
-            content = memory_obj["notes_content"] + memory_obj["action_items"]
-            content_chunks = get_chunks(content)
-            embeddings = [embed_text(chunk) for chunk in content_chunks]
-            centroid = str(calc_centroid(np.array(embeddings)).tolist())
-            embeddings = list(map(str, embeddings))
-            content = memory_obj["notes_content"] + f"\nDIVIDER\n" + memory_obj["action_items"]
-            title = memory_obj["title"]
-
-            supabase.table("memories").insert({
-                    "user_id": user_id,
-                    "meeting_id": meeting_obj_id,
-                    "content": content,
-                    "chunks": content_chunks,
-                    "embeddings": embeddings,
-                    "centroid": centroid,
-                }).execute()
-
-            supabase.table("late_meeting")\
-                .update({"summary": memory_obj["notes_content"], "action_items": memory_obj["action_items"], "meeting_title": title})\
-                .eq("id", meeting_obj_id)\
-                .execute()
-
-            return {
-                "action_items": memory_obj["action_items"],
-                "notes_content": memory_obj["notes_content"]
-            }
-    else:
-        action_items = extract_action_items(transcript)
+    if not is_memory_enabled:
         notes_content = generate_notes(transcript)
-        
+        action_items = extract_action_items(transcript)
         return {
             "notes_content": notes_content,
             "action_items": action_items
         }
 
 
+    meeting_obj = supabase.table("late_meeting").select("id, transcript").eq("meeting_id", meeting_id).execute().data
+    if not meeting_obj or len(meeting_obj) == 0 or meeting_obj[0]["transcript"] is None:
+        result = supabase.table("late_meeting").upsert({
+                "meeting_id": meeting_id,
+                "user_ids": [user_id],
+                "meeting_start_time": time.time()
+            }, on_conflict="meeting_id").execute()
+
+        meeting_obj_id = result.data[0]["id"]
+        meeting_obj_transcript_exists = None
+    else:
+        meeting_obj_id = meeting_obj[0]["id"]
+        meeting_obj_transcript_exists = meeting_obj[0]["transcript"]
+
+    if not meeting_obj_transcript_exists:
+        # Fire and forget transcript storage
+        asyncio.create_task(store_transcript_file(transcript, meeting_obj_id))
+
+    memory = supabase.table("memories").select("*").eq("meeting_id", meeting_obj_id).execute().data
+
+    if memory and memory[0]["content"] and "ACTION_ITEMS" in memory[0]["content"]:
+        summary = memory[0]["content"].split("DIVIDER")[0]
+        action_items = memory[0]["content"].split("DIVIDER")[1]
+        return {
+            "action_items": action_items,
+            "notes_content": summary
+        }
+    else:
+        memory_obj = create_memory_object(transcript=transcript)
+        
+        # Fire and forget memory storage
+        asyncio.create_task(store_memory_data(memory_obj, user_id, meeting_obj_id))
+        
+        return {
+            "action_items": memory_obj["action_items"],
+            "notes_content": memory_obj["notes_content"]
+        }
+ 
 @app.post("/generate_actions")
 async def generate_actions(request, body: ActionRequest):
     data = json.loads(body)
@@ -1250,6 +1218,56 @@ async def get_history(request):
 @app.get("/health_check")
 async def health_check():
     return {"status": "ok"}
+
+
+async def store_transcript_file(transcript: str, meeting_obj_id: str):
+    """Store transcript file and update meeting record asynchronously"""
+    try:
+        unique_filename = f"{uuid.uuid4()}.txt"
+        file_bytes = transcript.encode('utf-8')
+        
+        storage_response = supabase.storage.from_("transcripts").upload(
+            path=unique_filename,
+            file=file_bytes,
+        )
+        file_url = supabase.storage.from_("transcripts").get_public_url(unique_filename)
+        
+        supabase.table("late_meeting")\
+            .update({"transcript": file_url})\
+            .eq("id", meeting_obj_id)\
+            .execute()
+    except Exception as e:
+        logger.error(f"Failed to store transcript: {str(e)}")
+
+async def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str):
+    """Store memory data asynchronously"""
+    try:
+        content = memory_obj["notes_content"] + memory_obj["action_items"]
+        content_chunks = get_chunks(content)
+        embeddings = [embed_text(chunk) for chunk in content_chunks]
+        centroid = str(calc_centroid(np.array(embeddings)).tolist())
+        embeddings = list(map(str, embeddings))
+        final_content = memory_obj["notes_content"] + f"\nDIVIDER\n" + memory_obj["action_items"]
+
+        supabase.table("memories").insert({
+            "user_id": user_id,
+            "meeting_id": meeting_obj_id,
+            "content": final_content,
+            "chunks": content_chunks,
+            "embeddings": embeddings,
+            "centroid": centroid,
+        }).execute()
+
+        supabase.table("late_meeting")\
+            .update({
+                "summary": memory_obj["notes_content"], 
+                "action_items": memory_obj["action_items"], 
+                "meeting_title": memory_obj["title"]
+            })\
+            .eq("id", meeting_obj_id)\
+            .execute()
+    except Exception as e:
+        logger.error(f"Failed to store memory data: {str(e)}")
 
 
 if __name__ == "__main__":
