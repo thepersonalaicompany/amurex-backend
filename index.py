@@ -68,7 +68,7 @@ class AIClientAdapter:
             "gpt-4o": "llama3.2"
         }
         groq = {
-            "llama-3.3": "llama-3.3-70b-specdec",
+            "llama-3.3": "llama-3.3-70b-versatile",
             "llama-3.2": "llama3-70b-8192"
         }
         if self.client_mode == "LOCAL":
@@ -226,7 +226,11 @@ def generate_notes(transcript):
                     **Key Points:**
                     - Option was fully received and confirmed.
                     - System is confirmed to be running properly.
-                    - Network is functioning correctly."""
+                    - Network is functioning correctly.""" + 
+                    "Here's an example of what your JSON output should look like: " +
+                    """{
+                        "notes": "### Meeting Notes\n\n**Date:** February 19, 2025\n\n**Participants:**\n- You\n- Sanskar Jethi\n\n**Summary:**\n- Discussion about an option being fully received.\n- Confirmation that the system is running properly now.\n- Network issues have been resolved and are working perfectly.\n\n**Key Points:**\n- Option was fully received and confirmed.\n- System is confirmed to be running properly.\n- Network is functioning correctly."
+                    }"""
         }
     ]
 
@@ -239,6 +243,7 @@ def generate_notes(transcript):
         )
     except Exception as e:
         if "failed_generation" in str(e):
+            # extract the failed_generation from the error message anyways
             response = e["failed_generation"]
         else:
             return "No notes found."
@@ -369,7 +374,7 @@ def send_email(email, email_type, **kwargs):
             >
                 {owner_email} shared their notes with you
                 <div>
-                 ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿
+                 ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿
                 </div>
             </div>
             <body
@@ -519,6 +524,148 @@ def send_email(email, email_type, **kwargs):
                 .update({"shared_with": [email]})\
                 .eq("id", meeting_obj_id)\
                 .execute()
+
+
+    elif email_type == "post_meeting_summary":
+        meeting_id = kwargs['meeting_id']
+        result = supabase.table("late_meeting")\
+            .select("summary, action_items")\
+            .eq("meeting_id", meeting_id)\
+            .execute().data[0]
+        
+        summary = result["summary"]
+        print(summary)
+
+        resend_email = os.getenv("RESEND_NOREPLY")
+
+        subject = f"Your meeting summary is ready | Amurex"
+        html = f"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+            <html dir="ltr" lang="en">
+            <div
+                style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0"
+            >
+                Your meeting summary is ready | Amurex
+            </div>
+            <body
+                style='background-color:rgb(255,255,255);margin-top:auto;margin-bottom:auto;margin-left:auto;margin-right:auto;font-family:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";padding-left:0.5rem;padding-right:0.5rem'
+            >
+                <table
+                align="center"
+                width="100%"
+                border="0"
+                cellpadding="0"
+                cellspacing="0"
+                role="presentation"
+                style="border-width:1px;border-style:solid;border-color:rgb(234,234,234);border-radius:0.25rem;margin-top:40px;margin-bottom:40px;margin-left:auto;margin-right:auto;padding:20px;max-width:465px"
+                >
+                <tbody>
+                    <tr style="width:100%">
+                    <td>
+                        <table
+                        align="center"
+                        width="100%"
+                        border="0"
+                        cellpadding="0"
+                        cellspacing="0"
+                        role="presentation"
+                        style="margin-top:32px"
+                        >
+                        <tbody>
+                            <tr>
+                            <td>
+                                <div
+                                style="text-align:center;margin-top:0px;margin-bottom:0px;margin-left:auto;margin-right:auto;display:block;outline:none;border:none;text-decoration:none"
+                                >
+                                <a href="https://amurex.ai" style="text-decoration: none; color: inherit;" target="_blank">
+                                    <p style="font-size: 50px; display: inline-block; margin-right: 10px;">🦖</p>
+                                    <span style="font-size: 50px; display: inline-block;">Amurex</span>
+                                </a>
+                                </div>
+                            </td>
+                            </tr>
+                        </tbody>
+                        </table>
+                        <p
+                        style="color:rgb(0,0,0);font-size:14px;line-height:24px;margin:16px 0"
+                        >
+                        Hey 👋
+                        </p>
+                        <p
+                        style="color:rgb(0,0,0);font-size:14px;line-height:24px;margin:16px 0"
+                        >Here's a quick recap of your meeting:
+                        </p>
+                      
+                      {summary[:150].replace('\n                    ', '\n')\
+                       .replace('## ', '<h3 style="margin-bottom: 0.25rem; font-size: 1.125rem; font-weight: 700;">')\
+                       .replace('# ', '<h2 style="margin-bottom: 0.5rem; font-size: 1.5rem; font-weight: 700;">')\
+                       .replace('\n- ', '\n<li style="margin-bottom: 0.25rem; margin-left: 1rem;">')\
+                       .replace('\n-', '</li>\n<li style="margin-bottom: 0.25rem; margin-left: 1rem;">')\
+                       .strip() + "..."}\n\n
+                      
+                        <table
+                        align="center"
+                        width="100%"
+                        border="0"
+                        cellpadding="0"
+                        cellspacing="0"
+                        role="presentation"
+                        style="text-align:center;margin-top:32px;margin-bottom:32px"
+                        >
+                          
+                        <tbody>
+                            <tr>
+                            <td>
+                              <p
+                        style="color:rgb(0,0,0);font-size:14px;line-height:24px;margin:16px 0"
+                        >For the full summary, access it in our web app:<!-- -->
+                        </p>
+                                <a
+                                href="#"
+                                style="background-color:rgb(0,0,0);border-radius:0.25rem;color:rgb(255,255,255);font-size:12px;font-weight:600;text-decoration-line:none;text-align:center;padding-left:1.25rem;padding-right:1.25rem;padding-top:0.75rem;padding-bottom:0.75rem;line-height:100%;text-decoration:none;display:inline-block;max-width:100%;mso-padding-alt:0px;padding:12px 20px 12px 20px"
+                                target="_blank"
+                                ><span
+                                    ><!--[if mso
+                                    ]><i
+                                        style="mso-font-width:500%;mso-text-raise:18"
+                                        hidden
+                                        >&#8202;&#8202;</i
+                                    ><!
+                                    [endif]--></span
+                                ><span
+                                    style="max-width:100%;display:inline-block;line-height:120%;mso-padding-alt:0px;mso-text-raise:9px"
+                                    >View full summary</span
+                                ><span
+                                    ><!--[if mso
+                                    ]><i style="mso-font-width:500%" hidden
+                                        >&#8202;&#8202;&#8203;</i
+                                    ><!
+                                    [endif]--></span
+                                ></a
+                                >
+                            </td>
+                            </tr>
+                        </tbody>
+                        </table>
+                        <hr
+                        style="border-width:1px;border-style:solid;border-color:rgb(234,234,234);margin-top:26px;margin-bottom:26px;margin-left:0px;margin-right:0px;width:100%;border:none;border-top:1px solid #eaeaea"
+                        />
+                        <p
+                        style="color:rgb(102,102,102);font-size:12px;line-height:24px;margin:16px 0"
+                        >
+                        This invitation was intended for<!-- -->
+                        <span style="color:rgb(0,0,0)">{email}</span>. If you
+                        were not expecting this invitation, you can ignore this email. If
+                        you are concerned about your account&#x27;s safety, please reply
+                        to this email to get in touch with us.
+                        </p>
+                    </td>
+                    </tr>
+                </tbody>
+                </table>
+                <!--/$-->
+            </body>
+            </html>"""
+
 
     payload = {
         "from": resend_email,
@@ -739,6 +886,11 @@ async def end_meeting(request, body: EndMeetingRequest):
 
         meeting_obj_id = result.data[0]["id"]
         meeting_obj_transcript_exists = None
+
+        # send email with the summary after the meeting ends
+        send_email(user_id, "post_meeting_summary", {
+            "meeting_obj_id": meeting_obj_id,
+            })
     else:
         meeting_obj_id = meeting_obj[0]["id"]
         meeting_obj_transcript_exists = meeting_obj[0]["transcript"]
@@ -1123,8 +1275,12 @@ async def on_message(ws, msg):
 
         elif type_ == "check_suggestion":
             data["meeting_id"] = meeting_id
-            response = check_suggestion(data)
-            return json.dumps(response)
+            is_file_uploaded = data.get("isFileUploaded", None)
+            if is_file_uploaded is True:
+                response = check_suggestion(data)
+                return json.dumps(response)
+            else:
+                return json.dumps({"files_found": False, "generated_suggestion": None, "last_question": None, "type": "no_file_uploaded"})
 
     except json.JSONDecodeError as e:
         logger.error(f"JSON parsing error: {str(e)}", exc_info=True)
@@ -1235,6 +1391,16 @@ async def update_meeting_obj(request):
 
 @app.get("/get_history")
 async def get_history(request):
+
+    return {"status": "ok"}
+
+
+@app.post("/send_email_summary")
+async def send_email_summary(request):
+    json_body = json.loads(request.body)
+    meeting_id = json_body.get("meeting_id")
+    email = json_body.get("email")
+    send_email(email=email, email_type="post_meeting_summary", meeting_id=meeting_id)
 
     return {"status": "ok"}
 
