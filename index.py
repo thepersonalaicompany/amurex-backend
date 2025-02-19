@@ -888,9 +888,9 @@ async def end_meeting(request, body: EndMeetingRequest):
         meeting_obj_transcript_exists = None
 
         # send email with the summary after the meeting ends
-        send_email(user_id, "post_meeting_summary", {
-            "meeting_obj_id": meeting_obj_id,
-            })
+        # send_email(user_id, "post_meeting_summary", {
+        #     "meeting_obj_id": meeting_obj_id,
+        #     })
     else:
         meeting_obj_id = meeting_obj[0]["id"]
         meeting_obj_transcript_exists = meeting_obj[0]["transcript"]
@@ -1405,6 +1405,19 @@ async def send_email_summary(request):
     return {"status": "ok"}
 
 
+@app.post("/generate_summary")
+async def generate_summary(request):
+    json_body = json.loads(request.body)
+    
+    try:
+        summary = generate_notes(json_body.get("transcript"))
+    except Exception as e:
+        logger.error(f"Failed to generate summary: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+    return {"status": "ok", "summary": summary}
+
+
 @app.get("/health_check")
 async def health_check():
     return {"status": "ok"}
@@ -1461,5 +1474,5 @@ async def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str)
 
 
 if __name__ == "__main__":
-    port = int(os.getenv('PORT', 8080))
+    port = int(os.getenv('PORT', 8000))
     app.start(port=port, host="0.0.0.0")
