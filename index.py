@@ -1395,29 +1395,6 @@ async def get_history(request):
     return {"status": "ok"}
 
 
-@app.post("/send_email_summary")
-async def send_email_summary(request):
-    json_body = json.loads(request.body)
-    meeting_id = json_body.get("meeting_id")
-    email = json_body.get("email")
-    send_email(email=email, email_type="post_meeting_summary", meeting_id=meeting_id)
-
-    return {"status": "ok"}
-
-
-@app.post("/generate_summary")
-async def generate_summary(request):
-    json_body = json.loads(request.body)
-    
-    try:
-        summary = generate_notes(json_body.get("transcript"))
-    except Exception as e:
-        logger.error(f"Failed to generate summary: {str(e)}")
-        return {"status": "error", "message": str(e)}
-
-    return {"status": "ok", "summary": summary}
-
-
 @app.get("/health_check")
 async def health_check():
     return {"status": "ok"}
