@@ -25,7 +25,7 @@ from functools import lru_cache
 import asyncio
 import redis
 import re
-from threading import Thread
+import multiprocessing
 
 
 redis_user = os.getenv("REDIS_USERNAME")
@@ -1314,11 +1314,11 @@ async def end_meeting(request, body: EndMeetingRequest):
         }
 
         # Create and start the storage task after preparing the response
-        thread = Thread(target=store_memory_data, args=(memory_obj, user_id, meeting_obj_id))
-        thread.start()
+        pool = multiprocessing.pool.ThreadPool(processes=1)
+        pool.apply_async(store_memory_data, args=(memory_obj, user_id, meeting_obj_id, pool))
 
         return response
- 
+
 @app.post("/generate_actions")
 async def generate_actions(request, body: ActionRequest):
     data = json.loads(body)
@@ -1789,17 +1789,6 @@ async def update_meeting_obj(request):
     return {"status": "ok"}
 
 
-@app.post("/send_post_meeting_email")
-async def send_post_meeting_email(request):
-    json_body = json.loads(request.body)
-    email = json_body.get("email")
-    meeting_id = json_body.get("meeting_id")
-    send_email(email=email, email_type="post_meeting_summary", meeting_id=meeting_id)
-    
-    return {"status": "ok"}
-    
-
-
 @app.get("/get_history")
 async def get_history(request):
 
@@ -1830,10 +1819,9 @@ async def store_transcript_file(transcript: str, meeting_obj_id: str):
     except Exception as e:
         logger.error(f"Failed to store transcript: {str(e)}")
 
-def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str):
+def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str, pool: multiprocessing.pool.ThreadPool):
     """Store memory data asynchronously"""
     try:
-        time.sleep(10)
         content = memory_obj["notes_content"] + memory_obj["action_items"]
         content_chunks = get_chunks(content)
         embeddings = [embed_text(chunk) for chunk in content_chunks]
@@ -1872,6 +1860,8 @@ def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str):
             supabase.table("late_meeting").update({
                 "post_email_sent": True
             }).eq("id", meeting_obj_id).execute()
+
+        pool.close()
     except Exception as e:
         logger.error(f"Failed to store memory data: {str(e)}")
 
