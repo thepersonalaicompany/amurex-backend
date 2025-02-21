@@ -25,6 +25,7 @@ from functools import lru_cache
 import asyncio
 import redis
 import re
+from threading import Thread
 
 
 redis_user = os.getenv("REDIS_USERNAME")
@@ -463,7 +464,6 @@ def generate_notes(transcript):
 
 
 def generate_title(summary):
-    print("This is the summary being passed to the title generator: ", summary)
     messages = [
         {
             "role": "system",
@@ -1308,13 +1308,16 @@ async def end_meeting(request, body: EndMeetingRequest):
     else:
         memory_obj = create_memory_object(transcript=transcript)
         
-        # Fire and forget memory storage
-        asyncio.create_task(store_memory_data(memory_obj, user_id, meeting_obj_id))
-
-        return {
+        response = {
             "action_items": memory_obj["action_items"],
             "notes_content": memory_obj["notes_content"]
         }
+
+        # Create and start the storage task after preparing the response
+        thread = Thread(target=store_memory_data, args=(memory_obj, user_id, meeting_obj_id))
+        thread.start()
+
+        return response
  
 @app.post("/generate_actions")
 async def generate_actions(request, body: ActionRequest):
@@ -1827,17 +1830,18 @@ async def store_transcript_file(transcript: str, meeting_obj_id: str):
     except Exception as e:
         logger.error(f"Failed to store transcript: {str(e)}")
 
-async def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str):
+def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str):
     """Store memory data asynchronously"""
     try:
+        time.sleep(10)
         content = memory_obj["notes_content"] + memory_obj["action_items"]
         content_chunks = get_chunks(content)
-        # embeddings = [embed_text(chunk) for chunk in content_chunks]
-        embeddings = []
-        # centroid = str(calc_centroid(np.array(embeddings)).tolist())
-        centroid = "[-0.1231232]"
-        # embeddings = list(map(str, embeddings))
-        embeddings = []
+        embeddings = [embed_text(chunk) for chunk in content_chunks]
+        # embeddings = []
+        centroid = str(calc_centroid(np.array(embeddings)).tolist())
+        # centroid = "[-0.1231232]"
+        embeddings = list(map(str, embeddings))
+        # embeddings = []
         final_content = memory_obj["notes_content"] + f"\nDIVIDER\n" + memory_obj["action_items"]
 
         supabase.table("memories").insert({
@@ -1873,5 +1877,5 @@ async def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str)
 
 
 if __name__ == "__main__":
-    port = int(os.getenv('PORT', 8000))
+    port = int(os.getenv('PORT', 8080))
     app.start(port=port, host="0.0.0.0")
