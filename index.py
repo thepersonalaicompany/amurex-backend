@@ -1223,6 +1223,11 @@ def create_memory_object(transcript):
     # Generate new results if not in cache
     action_items = extract_action_items(transcript)
     notes_content = generate_notes(transcript)
+    
+    # Ensure notes_content is a string before generating title
+    if isinstance(notes_content, list):
+        notes_content = '\n'.join(notes_content)
+    
     title = generate_title(notes_content)
     
     result = {
