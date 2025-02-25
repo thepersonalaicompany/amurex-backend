@@ -3,7 +3,6 @@ openai==1.54.1
 requests
 openai==1.54.1
 requests==2.31.0
-pydantic==2.6.1
 redis==5.0.1
 websockets==13.1
 numpy==2.1.3
