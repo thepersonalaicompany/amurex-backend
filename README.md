@@ -32,7 +32,7 @@ This is the backend for the entire Amurex project. You can use it to host your o
   - Supabase credentials
   - OpenAI API key (optional if using CLIENT_MODE=LOCAL)
   - Groq API key (optional if using CLIENT_MODE=LOCAL)
-  - MixedBread AI key (optional if using CLIENT_MODE=LOCAL)
+  - Mistral AI key (optional if using CLIENT_MODE=LOCAL)
 
 Note: When using CLIENT_MODE=LOCAL, you'll need to:
 - Install Ollama for local model inference
@@ -77,7 +77,7 @@ GROQ_API_KEY=your_groq_key
 MXBAI_API_KEY=your_mxbai_api_key
 
 # Mode Selection
-CLIENT_MODE=ONLINE #set LOCAL to run local Ollama instead of OpenAI and Groq API and fast-embed instead of mixedbread
+CLIENT_MODE=ONLINE #set LOCAL to run local Ollama instead of OpenAI and Groq API and fast-embed instead of mistralai
 
 #Ollama mode : 
 OLLAMA_ENDPOINT=<your_ollama_endpoint>

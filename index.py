@@ -14,7 +14,6 @@ from groq import Groq
 import uuid
 import fitz
 from dotenv import load_dotenv
-from mixedbread_ai.client import MixedbreadAI
 from io import BytesIO
 from PyPDF2 import PdfReader
 from robyn import Robyn, ALLOW_CORS, WebSocket, Response, Request
