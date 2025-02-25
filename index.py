@@ -24,6 +24,8 @@ from functools import lru_cache
 import asyncio
 import redis
 from mistralai import Mistral
+import re
+import multiprocessing
 
 
 redis_user = os.getenv("REDIS_USERNAME")
@@ -68,7 +70,7 @@ class AIClientAdapter:
             "gpt-4o": "llama3.2"
         }
         groq = {
-            "llama-3.3": "llama-3.3-70b-specdec",
+            "llama-3.3": "llama-3.3-70b-versatile",
             "llama-3.2": "llama3-70b-8192"
         }
         if self.client_mode == "LOCAL":
@@ -145,6 +147,215 @@ supabase: Client = create_client(url, key)
 def parse_array_string(s):
     # Remove brackets and split in one operation
     return np.fromstring(s[1:-1], sep=',', dtype=float)
+
+
+def markdown_to_html(markdown: str) -> str:
+    # yes, I've built our own markdown to html converter.
+
+    """
+    Convert a Markdown string to an HTML string, without using third-party libraries.
+    Supports a large subset of core Markdown features:
+      - Headings
+      - Bold, italic
+      - Inline code
+      - Fenced code blocks
+      - Links, images
+      - Blockquotes
+      - Unordered and ordered lists
+      - Horizontal rules
+      - Paragraphs
+    """
+    # Split input into lines
+    lines = markdown.split('\n')
+    
+    # State variables
+    in_code_block = False
+    code_block_delimiter = None
+    code_lines = []
+    paragraph_lines = []
+    html_output = []
+    
+    def flush_paragraph():
+        """Close out the current paragraph buffer and convert it into an HTML <p> block."""
+        if paragraph_lines:
+            # Join all paragraph lines with a space, then run inline parsing.
+            paragraph_text = ' '.join(paragraph_lines)
+            paragraph_text = parse_inline(paragraph_text)
+            html_output.append(f"<p>{paragraph_text}</p>")
+            paragraph_lines.clear()
+    
+    def parse_inline(text: str) -> str:
+        """
+        Perform inline replacements for:
+         - Images: ![alt](url)
+         - Links: [text](url)
+         - Bold: **text** or __text__
+         - Italic: *text* or _text_
+         - Inline code: `code`
+        """
+        # Images
+        text = re.sub(
+            r'!\[([^\]]*)\]\(([^)]+)\)',
+            r'<img alt="\1" src="\2">',
+            text
+        )
+        # Links
+        text = re.sub(
+            r'\[([^\]]+)\]\(([^)]+)\)',
+            r'<a href="\2">\1</a>',
+            text
+        )
+        # Bold (greedy match for ** or __)
+        text = re.sub(
+            r'(\*\*|__)(.+?)\1',
+            r'<strong>\2</strong>',
+            text
+        )
+        # Italic (greedy match for * or _)
+        text = re.sub(
+            r'(\*|_)(.+?)\1',
+            r'<em>\2</em>',
+            text
+        )
+        # Inline code
+        text = re.sub(
+            r'`([^`]+)`',
+            r'<code>\1</code>',
+            text
+        )
+        return text
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        
+        # Check for fenced code block (start or end)
+        fence_match = re.match(r'^(```|~~~)\s*$', line)
+        if fence_match:
+            fence = fence_match.group(1)
+            if not in_code_block:
+                # Entering code block
+                flush_paragraph()
+                in_code_block = True
+                code_block_delimiter = fence
+                code_lines = []
+            else:
+                # Exiting code block
+                if fence == code_block_delimiter:
+                    in_code_block = False
+                    # Escape HTML special chars inside code
+                    escaped_code = '\n'.join(code_lines)
+                    escaped_code = (
+                        escaped_code
+                        .replace('&', '&amp;')
+                        .replace('<', '&lt;')
+                        .replace('>', '&gt;')
+                    )
+                    html_output.append(f"<pre><code>{escaped_code}</code></pre>")
+            i += 1
+            continue
+        
+        # If we're currently in a fenced code block, gather lines until fence end
+        if in_code_block:
+            code_lines.append(line)
+            i += 1
+            continue
+        
+        # Check for headings: (#{1,6} + text)
+        heading_match = re.match(r'^(#{1,6})\s+(.*)', line)
+        if heading_match:
+            flush_paragraph()
+            level = len(heading_match.group(1))
+            heading_text = parse_inline(heading_match.group(2))
+            html_output.append(f"<h{level}>{heading_text}</h{level}>")
+            i += 1
+            continue
+        
+        # Check for horizontal rule
+        hr_match = re.match(r'^(\*[\s\*]*|\-[\s\-]*|_[\s_]*)$', line.strip())
+        if hr_match:
+            # Heuristically requires 3 or more symbols to be valid
+            # We'll do a simpler check by removing spaces and verifying length >= 3
+            chars_only = re.sub(r'\s+', '', line)
+            if len(chars_only) >= 3:
+                flush_paragraph()
+                html_output.append("<hr/>")
+                i += 1
+                continue
+        
+        # Check for blockquote
+        bq_match = re.match(r'^>\s?(.*)', line)
+        if bq_match:
+            flush_paragraph()
+            # Accumulate blockquote lines
+            quote_lines = [bq_match.group(1)]
+            j = i + 1
+            while j < len(lines):
+                next_line = lines[j]
+                next_bq = re.match(r'^>\s?(.*)', next_line)
+                if next_bq:
+                    quote_lines.append(next_bq.group(1))
+                    j += 1
+                else:
+                    break
+            # Recursively parse the blockquote content
+            inner_html = markdown_to_html('\n'.join(quote_lines))
+            html_output.append(f"<blockquote>{inner_html}</blockquote>")
+            i = j
+            continue
+        
+        # Check for lists (unordered or ordered)
+        # Unordered: -, +, or * at start
+        # Ordered: number followed by a period
+        ul_match = re.match(r'^(\*|\-|\+)\s+(.*)', line)
+        ol_match = re.match(r'^(\d+)\.\s+(.*)', line)
+        if ul_match or ol_match:
+            flush_paragraph()
+            # Determine list type
+            if ul_match:
+                list_tag = "ul"
+            else:
+                list_tag = "ol"
+            list_buffer = []
+            
+            # Gather subsequent lines
+            while i < len(lines):
+                l = lines[i]
+                # Check if we still match the same type of list
+                if list_tag == "ul":
+                    m = re.match(r'^(\*|\-|\+)\s+(.*)', l)
+                else:
+                    m = re.match(r'^(\d+)\.\s+(.*)', l)
+                
+                if m:
+                    item_content = m.group(2)
+                    list_buffer.append(item_content)
+                    i += 1
+                else:
+                    break
+            
+            # Convert the gathered lines into list items
+            html_output.append(f"<{list_tag}>")
+            for item in list_buffer:
+                html_output.append(f"  <li>{parse_inline(item)}</li>")
+            html_output.append(f"</{list_tag}>")
+            continue
+        
+        # If the line is empty, it signals a paragraph break
+        if not line.strip():
+            flush_paragraph()
+            i += 1
+            continue
+        
+        # Otherwise, treat it as part of a paragraph
+        paragraph_lines.append(line.strip())
+        i += 1
+    
+    # Flush any remaining paragraph at the end
+    flush_paragraph()
+    
+    # Join everything into one HTML string
+    return "\n".join(html_output)
 
 
 @app.exception
@@ -226,7 +437,11 @@ def generate_notes(transcript):
                     **Key Points:**
                     - Option was fully received and confirmed.
                     - System is confirmed to be running properly.
-                    - Network is functioning correctly."""
+                    - Network is functioning correctly.""" + 
+                    "Here's an example of what your JSON output should look like: " +
+                    """{
+                        "notes": "### Meeting Notes\n\n**Date:** February 19, 2025\n\n**Participants:**\n- You\n- Sanskar Jethi\n\n**Summary:**\n- Discussion about an option being fully received.\n- Confirmation that the system is running properly now.\n- Network issues have been resolved and are working perfectly.\n\n**Key Points:**\n- Option was fully received and confirmed.\n- System is confirmed to be running properly.\n- Network is functioning correctly."
+                    }"""
         }
     ]
 
@@ -239,6 +454,7 @@ def generate_notes(transcript):
         )
     except Exception as e:
         if "failed_generation" in str(e):
+            # extract the failed_generation from the error message anyways
             response = e["failed_generation"]
         else:
             return "No notes found."
@@ -248,7 +464,6 @@ def generate_notes(transcript):
 
 
 def generate_title(summary):
-    print("This is the summary being passed to the title generator: ", summary)
     messages = [
         {
             "role": "system",
@@ -368,9 +583,6 @@ def send_email(email, email_type, **kwargs):
                 style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0"
             >
                 {owner_email} shared their notes with you
-                <div>
-                 ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿
-                </div>
             </div>
             <body
                 style='background-color:rgb(255,255,255);margin-top:auto;margin-bottom:auto;margin-left:auto;margin-right:auto;font-family:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";padding-left:0.5rem;padding-right:0.5rem'
@@ -402,10 +614,33 @@ def send_email(email, email_type, **kwargs):
                                 <div
                                 style="text-align:center;margin-top:0px;margin-bottom:0px;margin-left:auto;margin-right:auto;display:block;outline:none;border:none;text-decoration:none"
                                 >
-                                <a href="https://amurex.ai" style="text-decoration: none; color: inherit;" target="_blank">
-                                    <p style="font-size: 50px; display: inline-block; margin-right: 10px;">🦖</p>
-                                    <span style="font-size: 50px; display: inline-block;">Amurex</span>
-                                </a>
+                                    <a
+                                        href="https://app.amurex.ai"
+                                        style="text-decoration: none; color: inherit"
+                                        target="_blank"
+                                    >
+                                        <p
+                                        style="
+                                            font-size: 40px;
+                                            display: inline-block;
+                                            margin: 0 5px 0 0;
+                                        "
+                                        >
+                                            <img 
+                                                src="https://www.amurex.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2FAmurexLogo.56901b87.png&w=64&q=75"
+                                                alt="Amurex Logo"
+                                                style="
+                                                width: 40px;
+                                                height: 40px;
+                                                vertical-align: middle;
+                                                border-radius: 50%;
+                                                "
+                                            />
+                                        </p>
+                                        <span style="font-size: 40px; display: inline-block">
+                                            Amurex
+                                        </span>
+                                    </a>
                                 </div>
                             </td>
                             </tr>
@@ -519,6 +754,319 @@ def send_email(email, email_type, **kwargs):
                 .update({"shared_with": [email]})\
                 .eq("id", meeting_obj_id)\
                 .execute()
+
+
+    elif email_type == "post_meeting_summary":
+        meeting_id = kwargs['meeting_id']
+        result = supabase.table("late_meeting")\
+            .select("summary, action_items")\
+            .eq("id", meeting_id)\
+            .execute().data[0]
+        
+        summary = result["summary"]
+        action_items = result["action_items"]
+
+        resend_email = os.getenv("RESEND_NOREPLY")
+
+        subject = f"Your notes are ready | Amurex"
+        html = f"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+                    <html dir="ltr" lang="en">
+                        <div
+                            style="
+                            display: none;
+                            overflow: hidden;
+                            line-height: 1px;
+                            opacity: 0;
+                            max-height: 0;
+                            max-width: 0;
+                            "
+                        >
+                            Your notes are ready | Amurex
+                        </div>
+                        
+                        <body
+                            style="
+                            background-color: rgb(255, 255, 255);
+                            margin-top: auto;
+                            margin-bottom: auto;
+                            margin-left: auto;
+                            margin-right: auto;
+                            font-family: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+                                'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+                            padding-left: 0.5rem;
+                            padding-right: 0.5rem;
+                            "
+                        >
+                            <table
+                            align="center"
+                            width="100%"
+                            border="0"
+                            cellpadding="0"
+                            cellspacing="0"
+                            role="presentation"
+                            style="
+                                border-width: 1px;
+                                border-style: solid;
+                                border-color: rgb(234, 234, 234);
+                                border-radius: 0.25rem;
+                                margin-top: 40px;
+                                margin-bottom: 40px;
+                                margin-left: auto;
+                                margin-right: auto;
+                                padding: 20px;
+                                max-width: 465px;
+                            "
+                            >
+                                <tbody>
+                                    <tr style="width: 100%">
+                                        <td>
+                                            <table
+                                            align="center"
+                                            width="100%"
+                                            border="0"
+                                            cellpadding="0"
+                                            cellspacing="0"
+                                            role="presentation"
+                                            style="margin-top: 32px"
+                                            >
+                                                <tbody>
+                                                    <tr>
+                                                        <td>
+                                                            <div style="
+                                                                text-align: center;
+                                                                margin-top: 0px;
+                                                                margin-bottom: 0px;
+                                                                margin-left: auto;
+                                                                margin-right: auto;
+                                                                display: block;
+                                                                outline: none;
+                                                                border: none;
+                                                                text-decoration: none;
+                                                                "
+                                                            >
+                                                                <a
+                                                                    href="https://app.amurex.ai"
+                                                                    style="text-decoration: none; color: inherit"
+                                                                    target="_blank"
+                                                                >
+                                                                    <p
+                                                                    style="
+                                                                        font-size: 40px;
+                                                                        display: inline-block;
+                                                                        margin: 0 5px 0 0;
+                                                                    "
+                                                                    >
+                                                                        <img 
+                                                                            src="https://www.amurex.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2FAmurexLogo.56901b87.png&w=64&q=75"
+                                                                            alt="Amurex Logo"
+                                                                            style="
+                                                                            width: 40px;
+                                                                            height: 40px;
+                                                                            vertical-align: middle;
+                                                                            border-radius: 50%;
+                                                                            "
+                                                                        />
+                                                                    </p>
+                                                                    <span style="font-size: 40px; display: inline-block">
+                                                                        Amurex
+                                                                    </span>
+                                                                </a>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                            
+                                            <p
+                                            style="
+                                                color: rgb(0, 0, 0);
+                                                font-size: 14px;
+                                                line-height: 24px;
+                                                margin: 16px 0;
+                                                "
+                                            >
+                                                Hey 👋
+                                            </p>
+                                            
+                                            <p
+                                            style="
+                                                color: rgb(0, 0, 0);
+                                                font-size: 14px;
+                                                line-height: 24px;
+                                                margin: 16px 0;
+                                            "
+                                            >
+                                                Here's a quick recap of your meeting:
+                                            </p>
+
+                                            <p
+                                            style="
+                                                color: rgb(0, 0, 0);
+                                                font-size: 16px;
+                                                font-weight: 600;
+                                                line-height: 24px;
+                                                margin: 24px 0 8px 0;
+                                                "
+                                            >
+                                                Summary
+                                            </p>
+
+                                            <div style="
+                                                max-height: 130px;
+                                                overflow: hidden;
+                                                position: relative;
+                                                margin-bottom: 20px;
+                                                padding: 16px;
+                                                border: 1px solid #eaeaea;
+                                                border-radius: 8px;
+                                                box-shadow: 0 4px 40px 10px rgba(147, 51, 234, 0.8), 0 0 20px 5px rgba(255, 0, 255, 0.6);
+                                            ">
+                                                {markdown_to_html(summary)}
+                                                <div style="
+                                                    position: absolute;
+                                                    bottom: 0;
+                                                    left: 0;
+                                                    width: 100%;
+                                                    height: 80px;
+                                                    background: linear-gradient(rgba(255,255,255,0), rgba(255,255,255,0.8) 40%, rgba(255,255,255,1) 90%);
+                                                    pointer-events: none;
+                                                    border-bottom-left-radius: 8px;
+                                                    border-bottom-right-radius: 8px;
+                                                "></div>
+                                            </div>
+
+                                            <p
+                                            style="
+                                                color: rgb(0, 0, 0);
+                                                font-size: 16px;
+                                                font-weight: 600;
+                                                line-height: 24px;
+                                                margin: 24px 0 8px 0;
+                                                "
+                                            >
+                                                Action Items
+                                            </p>
+                                            
+                                            <div style="
+                                                max-height: 130px;
+                                                overflow: hidden;
+                                                position: relative;
+                                                margin-bottom: 20px;
+                                                padding: 16px;
+                                                border: 1px solid #eaeaea;
+                                                border-radius: 8px;
+                                            ">
+                                                {action_items}
+                                                <div style="
+                                                    position: absolute;
+                                                    bottom: 0;
+                                                    left: 0;
+                                                    width: 100%;
+                                                    height: 80px;
+                                                    background: linear-gradient(rgba(255,255,255,0), rgba(255,255,255,1) 90%;
+                                                    pointer-events: none;
+                                                "></div>
+                                            </div>
+
+                                            <table
+                                                align="center"
+                                                width="100%"
+                                                border="0"
+                                                cellpadding="0"
+                                                cellspacing="0"
+                                                role="presentation"
+                                                style="text-align: center; margin-top: 32px; margin-bottom: 32px"
+                                            >
+                                                <tbody>
+                                                    <tr>
+                                                        <td>
+                                                            <p
+                                                            style="
+                                                                color: rgb(0, 0, 0);
+                                                                font-size: 14px;
+                                                                line-height: 24px;
+                                                                margin: 16px 0;
+                                                            "
+                                                            >
+                                                                For the full summary, access it in our web app:
+                                                            </p>
+                                                            
+                                                            <a
+                                                            href="https://app.amurex.ai/meetings/{meeting_id}"
+                                                            style="
+                                                                background-color: rgb(0, 0, 0);
+                                                                border-radius: 0.25rem;
+                                                                color: rgb(255, 255, 255);
+                                                                font-size: 12px;
+                                                                font-weight: 600;
+                                                                text-decoration-line: none;
+                                                                text-align: center;
+                                                                padding-left: 1.25rem;
+                                                                padding-right: 1.25rem;
+                                                                padding-top: 0.75rem;
+                                                                padding-bottom: 0.75rem;
+                                                                line-height: 100%;
+                                                                text-decoration: none;
+                                                                display: inline-block;
+                                                                max-width: 100%;
+                                                                mso-padding-alt: 0px;
+                                                                padding: 12px 20px 12px 20px;
+                                                            "
+                                                            target="_blank"
+                                                            >
+                                                                <span
+                                                                    style="
+                                                                    max-width: 100%;
+                                                                    display: inline-block;
+                                                                    line-height: 120%;
+                                                                    mso-padding-alt: 0px;
+                                                                    mso-text-raise: 9px;
+                                                                    "
+                                                                >
+                                                                    
+                                                                    View full summary
+                                                                </span>
+                                                            </a>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+
+                                            <hr
+                                            style="
+                                                border-width: 1px;
+                                                border-style: solid;
+                                                border-color: rgb(234, 234, 234);
+                                                margin-top: 26px;
+                                                margin-bottom: 26px;
+                                                margin-left: 0px;
+                                                margin-right: 0px;
+                                                width: 100%;
+                                                border: none;
+                                                border-top: 1px solid #eaeaea;
+                                                "
+                                            />
+
+                                            <p
+                                            style="
+                                                color: rgb(102, 102, 102);
+                                                font-size: 12px;
+                                                line-height: 24px;
+                                                margin: 16px 0;
+                                                "
+                                            >
+                                                This invitation was intended for<!-- --> <span style="color: rgb(0, 0, 0)">{email}</span>. 
+                                                If you were not expecting this invitation, you can ignore this email. If you are
+                                                concerned about your account&#x27;s safety, please get in touch with <a href="mailto:founders@thepersonalaicompany.com">founders@thepersonalaicompany.com</a>.
+                                            </p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <!--/$-->
+                        </body>
+                    </html>"""
+
 
     payload = {
         "from": resend_email,
@@ -675,6 +1223,11 @@ def create_memory_object(transcript):
     # Generate new results if not in cache
     action_items = extract_action_items(transcript)
     notes_content = generate_notes(transcript)
+    
+    # Ensure notes_content is a string before generating title
+    if isinstance(notes_content, list):
+        notes_content = '\n'.join(notes_content)
+    
     title = generate_title(notes_content)
     
     result = {
@@ -739,6 +1292,7 @@ async def end_meeting(request, body: EndMeetingRequest):
 
         meeting_obj_id = result.data[0]["id"]
         meeting_obj_transcript_exists = None
+
     else:
         meeting_obj_id = meeting_obj[0]["id"]
         meeting_obj_transcript_exists = meeting_obj[0]["transcript"]
@@ -759,14 +1313,17 @@ async def end_meeting(request, body: EndMeetingRequest):
     else:
         memory_obj = create_memory_object(transcript=transcript)
         
-        # Fire and forget memory storage
-        asyncio.create_task(store_memory_data(memory_obj, user_id, meeting_obj_id))
-        
-        return {
+        response = {
             "action_items": memory_obj["action_items"],
             "notes_content": memory_obj["notes_content"]
         }
- 
+
+        # Create and start the storage task after preparing the response
+        pool = multiprocessing.pool.ThreadPool(processes=1)
+        pool.apply_async(store_memory_data, args=(memory_obj, user_id, meeting_obj_id, pool))
+
+        return response
+
 @app.post("/generate_actions")
 async def generate_actions(request, body: ActionRequest):
     data = json.loads(body)
@@ -1123,8 +1680,12 @@ async def on_message(ws, msg):
 
         elif type_ == "check_suggestion":
             data["meeting_id"] = meeting_id
-            response = check_suggestion(data)
-            return json.dumps(response)
+            is_file_uploaded = data.get("isFileUploaded", None)
+            if is_file_uploaded is True:
+                response = check_suggestion(data)
+                return json.dumps(response)
+            else:
+                return json.dumps({"files_found": False, "generated_suggestion": None, "last_question": None, "type": "no_file_uploaded"})
 
     except json.JSONDecodeError as e:
         logger.error(f"JSON parsing error: {str(e)}", exc_info=True)
@@ -1263,14 +1824,17 @@ async def store_transcript_file(transcript: str, meeting_obj_id: str):
     except Exception as e:
         logger.error(f"Failed to store transcript: {str(e)}")
 
-async def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str):
+def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str, pool: multiprocessing.pool.ThreadPool):
     """Store memory data asynchronously"""
     try:
         content = memory_obj["notes_content"] + memory_obj["action_items"]
         content_chunks = get_chunks(content)
         embeddings = [embed_text(chunk) for chunk in content_chunks]
+        # embeddings = []
         centroid = str(calc_centroid(np.array(embeddings)).tolist())
+        # centroid = "[-0.1231232]"
         embeddings = list(map(str, embeddings))
+        # embeddings = []
         final_content = memory_obj["notes_content"] + f"\nDIVIDER\n" + memory_obj["action_items"]
 
         supabase.table("memories").insert({
@@ -1290,6 +1854,19 @@ async def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str)
             })\
             .eq("id", meeting_obj_id)\
             .execute()
+
+        # send email with the summary after the meeting ends
+        user_email = supabase.table("users").select("email").eq("id", user_id).execute().data[0]["email"]
+        
+        email_already_sent = supabase.table("late_meeting").select("post_email_sent").eq("id", meeting_obj_id).execute().data[0]["post_email_sent"]
+        if not email_already_sent:
+            send_email(email=user_email, email_type="post_meeting_summary", meeting_id=meeting_obj_id)
+
+            supabase.table("late_meeting").update({
+                "post_email_sent": True
+            }).eq("id", meeting_obj_id).execute()
+
+        pool.close()
     except Exception as e:
         logger.error(f"Failed to store memory data: {str(e)}")
 
