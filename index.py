@@ -1857,9 +1857,10 @@ def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str, pool:
 
         # send email with the summary after the meeting ends
         user_email = supabase.table("users").select("email").eq("id", user_id).execute().data[0]["email"]
+        emails_enabled = supabase.table("users").select("emails_enabled").eq("id", user_id).execute().data[0]["emails_enabled"]
         
         email_already_sent = supabase.table("late_meeting").select("post_email_sent").eq("id", meeting_obj_id).execute().data[0]["post_email_sent"]
-        if not email_already_sent:
+        if not email_already_sent and emails_enabled:
             send_email(email=user_email, email_type="post_meeting_summary", meeting_id=meeting_obj_id)
 
             supabase.table("late_meeting").update({
