@@ -14,7 +14,6 @@ from groq import Groq
 import uuid
 import fitz
 from dotenv import load_dotenv
-from mixedbread_ai.client import MixedbreadAI
 from io import BytesIO
 from PyPDF2 import PdfReader
 from robyn import Robyn, ALLOW_CORS, WebSocket, Response, Request
@@ -24,6 +23,7 @@ from database.db_manager import DatabaseManager
 from functools import lru_cache
 import asyncio
 import redis
+from mistralai import Mistral
 import re
 import multiprocessing
 
@@ -108,7 +108,8 @@ class EmbeddingAdapter:
             from fastembed import TextEmbedding  # Import fastembed only when running project locally
             self.fastembed_model = TextEmbedding(model_name="BAAI/bge-base-en")
         elif self.client_mode == "ONLINE":
-            self.mxbai_client = MixedbreadAI(api_key=os.getenv("MXBAI_API_KEY"))
+            # Initialize Mistral client instead of MixedbreadAI
+            self.mistral_client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
 
     def embeddings(self, text):
         if self.client_mode == "LOCAL":
@@ -116,15 +117,14 @@ class EmbeddingAdapter:
             result = np.array(list(self.fastembed_model.embed([text])))[-1].tolist()
             return result
         elif self.client_mode == "ONLINE":
-            # Use the MixedbreadAI client to generate embeddings
-            result = self.mxbai_client.embeddings(
-                model='mixedbread-ai/mxbai-embed-large-v1',
-                input=[text],
-                normalized=True,
-                encoding_format='float',
-                truncation_strategy='end'
+            # Use the Mistral client to generate embeddings
+            model = "mistral-embed"
+            response = self.mistral_client.embeddings.create(
+                model=model,
+                inputs=[text]
             )
-            return result.data[0].embedding
+
+            return response.data[0].embedding
 
 
 client_mode = os.getenv("CLIENT_MODE")
@@ -401,6 +401,7 @@ def extract_action_items(transcript):
     # Sending the prompt to the AI model using chat completions
     response = ai_client.chat_completions_create(
         model="llama-3.3",
+        # model="gpt-4o",
         messages=messages,
         temperature=0.2,
         response_format={"type": "json_object"}
@@ -448,6 +449,7 @@ def generate_notes(transcript):
     try:
         response = ai_client.chat_completions_create(
             model="llama-3.3",
+            # model="gpt-4o",
             messages=messages,
             temperature=0.2,
             response_format={"type": "json_object"}
@@ -467,16 +469,25 @@ def generate_title(summary):
     messages = [
         {
             "role": "system",
-            "content": f"""You are an executive assistant tasked with generating titles for meetings based on the meeting summaries."""
+            "content": (
+                "You are an executive assistant tasked with generating concise meeting titles. "
+                "Use the participants' names and the meeting date from the summary when available. "
+                "Keep the title relevant and limited to 10 words."
+            )
         },
         {
             "role": "user",
-            "content": "Generate a title for the following meeting summary. You must follow the JSON schema: {title: generated title}" + f"Full summary: {summary}"
+            "content": (
+                'Generate a title for the following meeting summary. '
+                'Return the response in JSON format following this schema: {"title": "<generated title>"}. '
+                f'Full summary: {summary}'
+            )
         }
     ]
 
     response = ai_client.chat_completions_create(
         model="llama-3.3",
+        # model="gpt-4o",
         messages=messages,
         temperature=0.2,
         response_format={"type": "json_object"}
@@ -1446,7 +1457,8 @@ def generate_realtime_suggestion(context, transcript):
     ]
 
     response = ai_client.chat_completions_create(
-        model="llama-3.2",
+        # model="llama-3.2",
+        model="gpt-4o",
         messages=messages,
         temperature=0
     )
@@ -1522,7 +1534,8 @@ def check_suggestion(request_dict):
             ]
 
             response = ai_client.chat_completions_create(
-                model="llama-3.2",
+                # model="llama-3.2",
+                model="gpt-4o",
                 messages=messages_list,
                 temperature=0,
                 response_format={"type": "json_object"}
@@ -1857,9 +1870,10 @@ def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str, pool:
 
         # send email with the summary after the meeting ends
         user_email = supabase.table("users").select("email").eq("id", user_id).execute().data[0]["email"]
+        emails_enabled = supabase.table("users").select("emails_enabled").eq("id", user_id).execute().data[0]["emails_enabled"]
         
         email_already_sent = supabase.table("late_meeting").select("post_email_sent").eq("id", meeting_obj_id).execute().data[0]["post_email_sent"]
-        if not email_already_sent:
+        if not email_already_sent and emails_enabled:
             send_email(email=user_email, email_type="post_meeting_summary", meeting_id=meeting_obj_id)
 
             supabase.table("late_meeting").update({
