@@ -1251,7 +1251,15 @@ def create_memory_object(transcript):
 
 @lru_cache(maxsize=1000)
 def check_memory_enabled(user_id):
-    return supabase.table("users").select("memory_enabled").eq("id", user_id).execute().data[0]["memory_enabled"]
+    try:
+        result = supabase.table("users").select("memory_enabled").eq("id", user_id).execute()
+        if result.data and len(result.data) > 0:
+            return result.data[0].get("memory_enabled", False)
+        logger.warning(f"No user found with id {user_id}")
+        return False
+    except Exception as e:
+        logger.error(f"Error checking memory enabled for user {user_id}: {str(e)}")
+        return False
 
 @app.post("/end_meeting")
 async def end_meeting(request, body: EndMeetingRequest):
