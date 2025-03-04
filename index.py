@@ -1263,85 +1263,147 @@ def check_memory_enabled(user_id):
 
 @app.post("/end_meeting")
 async def end_meeting(request, body: EndMeetingRequest):
-    # the logic here could be simplified as well
-    # TODO: simplify the logic
-    data = json.loads(body)
-    transcript = data["transcript"]
-    user_id = data.get("user_id", None)
-    meeting_id = data.get("meeting_id", None)
+    try:
+        data = json.loads(body)
+        transcript = data["transcript"]
+        user_id = data.get("user_id")
+        meeting_id = data.get("meeting_id")
 
-
-    if not user_id:
-        # this is a temporary fix for the issue
-        # we need to fix this in the future
-        # TODO: figure out why tf are we not sending user_id from the chrome extension
-        return {
-            "notes_content": generate_notes(transcript),
-            "action_items": extract_action_items(transcript)
-        }
-    
-    if not meeting_id:
-        action_items = extract_action_items(transcript)
-        notes_content = generate_notes(transcript)
+        # If no user_id or meeting_id, return basic response
+        if not user_id or user_id == "undefined" or user_id == "null":
+            logger.info("No valid user_id provided, returning basic response")
+            return {
+                "notes_content": generate_notes(transcript),
+                "action_items": extract_action_items(transcript)
+            }
         
-        return {
-            "notes_content": notes_content,
-            "action_items": action_items
-        }
-    
-    
-    is_memory_enabled = check_memory_enabled(user_id)
-
-    if not is_memory_enabled:
-        notes_content = generate_notes(transcript)
-        action_items = extract_action_items(transcript)
-        return {
-            "notes_content": notes_content,
-            "action_items": action_items
-        }
-
-
-    meeting_obj = supabase.table("late_meeting").select("id, transcript").eq("meeting_id", meeting_id).execute().data
-    if not meeting_obj or len(meeting_obj) == 0 or meeting_obj[0]["transcript"] is None:
-        result = supabase.table("late_meeting").upsert({
-                "meeting_id": meeting_id,
-                "user_ids": [user_id],
-                "meeting_start_time": time.time()
-            }, on_conflict="meeting_id").execute()
-
-        meeting_obj_id = result.data[0]["id"]
-        meeting_obj_transcript_exists = None
-
-    else:
-        meeting_obj_id = meeting_obj[0]["id"]
-        meeting_obj_transcript_exists = meeting_obj[0]["transcript"]
-
-    if not meeting_obj_transcript_exists:
-        # Fire and forget transcript storage
-        asyncio.create_task(store_transcript_file(transcript, meeting_obj_id))
-
-    memory = supabase.table("memories").select("*").eq("meeting_id", meeting_obj_id).execute().data
-
-    if memory and memory[0]["content"] and "ACTION_ITEMS" in memory[0]["content"]:
-        summary = memory[0]["content"].split("DIVIDER")[0]
-        action_items = memory[0]["content"].split("DIVIDER")[1]
-        return {
-            "action_items": action_items,
-            "notes_content": summary
-        }
-    else:
-        memory_obj = create_memory_object(transcript=transcript)
+        if not meeting_id:
+            logger.info("No meeting_id provided, returning basic response")
+            action_items = extract_action_items(transcript)
+            notes_content = generate_notes(transcript)
+            return {
+                "notes_content": notes_content,
+                "action_items": action_items
+            }
         
-        response = {
-            "action_items": memory_obj["action_items"],
-            "notes_content": memory_obj["notes_content"]
-        }
+        # Check if memory is enabled for this user
+        try:
+            is_memory_enabled = check_memory_enabled(user_id)
+            logger.info(f"Memory enabled status for user {user_id}: {is_memory_enabled}")
+        except Exception as e:
+            logger.error(f"Error checking memory enabled status: {str(e)}")
+            is_memory_enabled = False
 
-        # Create and start the storage task after preparing the response
-        pool = multiprocessing.pool.ThreadPool(processes=1)
-        pool.apply_async(store_memory_data, args=(memory_obj, user_id, meeting_obj_id, pool))
+        if not is_memory_enabled:
+            logger.info(f"Memory not enabled for user {user_id}, returning basic response")
+            notes_content = generate_notes(transcript)
+            action_items = extract_action_items(transcript)
+            return {
+                "notes_content": notes_content,
+                "action_items": action_items
+            }
 
-        return response
+        meeting_obj = supabase.table("late_meeting").select("id, transcript").eq("meeting_id", meeting_id).execute().data
+        if not meeting_obj or len(meeting_obj) == 0 or meeting_obj[0]["transcript"] is None:
+            result = supabase.table("late_meeting").upsert({
+                    "meeting_id": meeting_id,
+                    "user_ids": [user_id],
+                    "meeting_start_time": time.time()
+                }, on_conflict="meeting_id").execute()
+
+            meeting_obj_id = result.data[0]["id"]
+            meeting_obj_transcript_exists = None
+        else:
+            meeting_obj_id = meeting_obj[0]["id"]
+            meeting_obj_transcript_exists = meeting_obj[0]["transcript"]
+
+        if not meeting_obj_transcript_exists:
+            # Fire and forget transcript storage
+            asyncio.create_task(store_transcript_file(transcript, meeting_obj_id))
+
+        memory = supabase.table("memories").select("*").eq("meeting_id", meeting_obj_id).execute().data
+
+        if memory and memory[0]["content"] and "DIVIDER" in memory[0]["content"]:
+            summary = memory[0]["content"].split("DIVIDER")[0]
+            action_items = memory[0]["content"].split("DIVIDER")[1]
+            return {
+                "action_items": action_items,
+                "notes_content": summary
+            }
+        else:
+            memory_obj = create_memory_object(transcript=transcript)
+            
+            response = {
+                "action_items": memory_obj["action_items"],
+                "notes_content": memory_obj["notes_content"]
+            }
+
+            # Create async task for storing memory data
+            asyncio.create_task(store_memory_data(memory_obj, user_id, meeting_obj_id))
+
+            return response
+
+    except Exception as e:
+        logger.error(f"Error in end_meeting: {str(e)}")
+        return Response(
+            status_code=500,
+            description=f"Internal server error: {str(e)}",
+            headers={}
+        )
+
+async def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str):
+    """Store memory data asynchronously using asyncio"""
+    try:
+        content = memory_obj["notes_content"] + memory_obj["action_items"]
+        content_chunks = get_chunks(content)
+        
+        # Create embeddings concurrently using asyncio.gather
+        async def create_embedding(chunk):
+            return embed_text(chunk)
+        
+        embeddings = await asyncio.gather(*[create_embedding(chunk) for chunk in content_chunks])
+        
+        centroid = str(calc_centroid(np.array(embeddings)).tolist())
+        embeddings = list(map(str, embeddings))
+        final_content = memory_obj["notes_content"] + f"\nDIVIDER\n" + memory_obj["action_items"]
+
+        # Execute database operations
+        await asyncio.gather(
+            supabase.table("memories").insert({
+                "user_id": user_id,
+                "meeting_id": meeting_obj_id,
+                "content": final_content,
+                "chunks": content_chunks,
+                "embeddings": embeddings,
+                "centroid": centroid,
+            }).execute(),
+
+            supabase.table("late_meeting").update({
+                "summary": memory_obj["notes_content"], 
+                "action_items": memory_obj["action_items"], 
+                "meeting_title": memory_obj["title"]
+            }).eq("id", meeting_obj_id).execute()
+        )
+
+        # Get user email and preferences
+        user_data = await supabase.table("users").select("email,emails_enabled").eq("id", user_id).execute()
+        user_email = user_data.data[0]["email"]
+        emails_enabled = user_data.data[0]["emails_enabled"]
+        
+        email_data = await supabase.table("late_meeting").select("post_email_sent").eq("id", meeting_obj_id).execute()
+        email_already_sent = email_data.data[0]["post_email_sent"]
+
+        if not email_already_sent and emails_enabled:
+            await asyncio.gather(
+                send_email(email=user_email, email_type="post_meeting_summary", meeting_id=meeting_obj_id),
+                supabase.table("late_meeting").update({
+                    "post_email_sent": True
+                }).eq("id", meeting_obj_id).execute()
+            )
+
+    except Exception as e:
+        logger.error(f"Failed to store memory data: {str(e)}")
+        # Consider implementing a retry mechanism here
 
 @app.post("/generate_actions")
 async def generate_actions(request, body: ActionRequest):
@@ -1844,53 +1906,6 @@ async def store_transcript_file(transcript: str, meeting_obj_id: str):
             .execute()
     except Exception as e:
         logger.error(f"Failed to store transcript: {str(e)}")
-
-def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str, pool: multiprocessing.pool.ThreadPool):
-    """Store memory data asynchronously"""
-    try:
-        content = memory_obj["notes_content"] + memory_obj["action_items"]
-        content_chunks = get_chunks(content)
-        embeddings = [embed_text(chunk) for chunk in content_chunks]
-        # embeddings = []
-        centroid = str(calc_centroid(np.array(embeddings)).tolist())
-        # centroid = "[-0.1231232]"
-        embeddings = list(map(str, embeddings))
-        # embeddings = []
-        final_content = memory_obj["notes_content"] + f"\nDIVIDER\n" + memory_obj["action_items"]
-
-        supabase.table("memories").insert({
-            "user_id": user_id,
-            "meeting_id": meeting_obj_id,
-            "content": final_content,
-            "chunks": content_chunks,
-            "embeddings": embeddings,
-            "centroid": centroid,
-        }).execute()
-
-        supabase.table("late_meeting")\
-            .update({
-                "summary": memory_obj["notes_content"], 
-                "action_items": memory_obj["action_items"], 
-                "meeting_title": memory_obj["title"]
-            })\
-            .eq("id", meeting_obj_id)\
-            .execute()
-
-        # send email with the summary after the meeting ends
-        user_email = supabase.table("users").select("email").eq("id", user_id).execute().data[0]["email"]
-        emails_enabled = supabase.table("users").select("emails_enabled").eq("id", user_id).execute().data[0]["emails_enabled"]
-        
-        email_already_sent = supabase.table("late_meeting").select("post_email_sent").eq("id", meeting_obj_id).execute().data[0]["post_email_sent"]
-        if not email_already_sent and emails_enabled:
-            send_email(email=user_email, email_type="post_meeting_summary", meeting_id=meeting_obj_id)
-
-            supabase.table("late_meeting").update({
-                "post_email_sent": True
-            }).eq("id", meeting_obj_id).execute()
-
-        pool.close()
-    except Exception as e:
-        logger.error(f"Failed to store memory data: {str(e)}")
 
 
 if __name__ == "__main__":
