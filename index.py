@@ -1351,59 +1351,145 @@ async def end_meeting(request, body: EndMeetingRequest):
             headers={}
         )
 
-async def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str):
-    """Store memory data asynchronously using asyncio"""
-    try:
-        content = memory_obj["notes_content"] + memory_obj["action_items"]
-        content_chunks = get_chunks(content)
-        
-        # Create embeddings concurrently using asyncio.gather
-        async def create_embedding(chunk):
-            return embed_text(chunk)
-        
-        embeddings = await asyncio.gather(*[create_embedding(chunk) for chunk in content_chunks])
-        
-        centroid = str(calc_centroid(np.array(embeddings)).tolist())
-        embeddings = list(map(str, embeddings))
-        final_content = memory_obj["notes_content"] + f"\nDIVIDER\n" + memory_obj["action_items"]
+async def store_memory_data(memory_obj: dict, user_id: str, meeting_obj_id: str, max_retries: int = 1):
+    """Store memory data asynchronously using asyncio with retries"""
+    retry_count = 0
+    backoff_time = 1  # Initial backoff time in seconds
 
-        # Execute database operations
-        await asyncio.gather(
-            supabase.table("memories").insert({
-                "user_id": user_id,
-                "meeting_id": meeting_obj_id,
-                "content": final_content,
-                "chunks": content_chunks,
-                "embeddings": embeddings,
-                "centroid": centroid,
-            }).execute(),
+    while retry_count < max_retries:
+        try:
+            # Step 1: Process content and create chunks
+            try:
+                content = memory_obj["notes_content"] + memory_obj["action_items"]
+                content_chunks = get_chunks(content)
+            except Exception as content_error:
+                logger.error(f"Failed to process content: {str(content_error)}")
+                raise content_error
 
-            supabase.table("late_meeting").update({
-                "summary": memory_obj["notes_content"], 
-                "action_items": memory_obj["action_items"], 
-                "meeting_title": memory_obj["title"]
-            }).eq("id", meeting_obj_id).execute()
-        )
+            # Step 2: Create embeddings with retry for each chunk
+            try:
+                async def create_embedding_with_retry(chunk, max_chunk_retries=2):
+                    chunk_retry = 0
+                    while chunk_retry < max_chunk_retries:
+                        try:
+                            return await embed_text(chunk)
+                        except Exception as e:
+                            chunk_retry += 1
+                            if chunk_retry == max_chunk_retries:
+                                raise e
+                            await asyncio.sleep(1)
+                
+                embeddings = await asyncio.gather(
+                    *[create_embedding_with_retry(chunk) for chunk in content_chunks],
+                    return_exceptions=True
+                )
 
-        # Get user email and preferences
-        user_data = await supabase.table("users").select("email,emails_enabled").eq("id", user_id).execute()
-        user_email = user_data.data[0]["email"]
-        emails_enabled = user_data.data[0]["emails_enabled"]
-        
-        email_data = await supabase.table("late_meeting").select("post_email_sent").eq("id", meeting_obj_id).execute()
-        email_already_sent = email_data.data[0]["post_email_sent"]
+                # Check if any embeddings failed
+                failed_embeddings = [i for i, e in enumerate(embeddings) if isinstance(e, Exception)]
+                if failed_embeddings:
+                    raise Exception(f"Failed to create embeddings for chunks: {failed_embeddings}")
 
-        if not email_already_sent and emails_enabled:
-            await asyncio.gather(
-                send_email(email=user_email, email_type="post_meeting_summary", meeting_id=meeting_obj_id),
-                supabase.table("late_meeting").update({
-                    "post_email_sent": True
-                }).eq("id", meeting_obj_id).execute()
-            )
+            except Exception as embedding_error:
+                logger.error(f"Failed to create embeddings: {str(embedding_error)}")
+                raise embedding_error
 
-    except Exception as e:
-        logger.error(f"Failed to store memory data: {str(e)}")
-        # Consider implementing a retry mechanism here
+            # Step 3: Calculate centroid
+            try:
+                centroid = str(calc_centroid(np.array(embeddings)).tolist())
+                embeddings = list(map(str, embeddings))
+                final_content = memory_obj["notes_content"] + f"\nDIVIDER\n" + memory_obj["action_items"]
+            except Exception as processing_error:
+                logger.error(f"Failed to process embeddings: {str(processing_error)}")
+                raise processing_error
+
+            # Step 4: Database operations with individual error handling
+            try:
+                # Execute database operations concurrently
+                db_results = await asyncio.gather(
+                    supabase.table("memories").insert({
+                        "user_id": user_id,
+                        "meeting_id": meeting_obj_id,
+                        "content": final_content,
+                        "chunks": content_chunks,
+                        "embeddings": embeddings,
+                        "centroid": centroid,
+                    }).execute(),
+                    supabase.table("late_meeting").update({
+                        "summary": memory_obj["notes_content"], 
+                        "action_items": memory_obj["action_items"], 
+                        "meeting_title": memory_obj["title"]
+                    }).eq("id", meeting_obj_id).execute(),
+                    return_exceptions=True
+                )
+
+                # Check for database operation failures
+                for i, result in enumerate(db_results):
+                    if isinstance(result, Exception):
+                        raise Exception(f"Database operation {i} failed: {str(result)}")
+
+            except Exception as db_error:
+                logger.error(f"Database operations failed: {str(db_error)}")
+                raise db_error
+
+            # Step 5: Email handling with retries
+            try:
+                # Get user email and preferences
+                user_data = await supabase.table("users").select("email,emails_enabled").eq("id", user_id).execute()
+                if not user_data.data:
+                    raise Exception(f"No user found with id {user_id}")
+                
+                user_email = user_data.data[0]["email"]
+                emails_enabled = user_data.data[0]["emails_enabled"]
+                
+                email_data = await supabase.table("late_meeting").select("post_email_sent").eq("id", meeting_obj_id).execute()
+                if not email_data.data:
+                    raise Exception(f"No meeting found with id {meeting_obj_id}")
+                
+                email_already_sent = email_data.data[0]["post_email_sent"]
+
+                if not email_already_sent and emails_enabled:
+                    email_results = await asyncio.gather(
+                        send_email(email=user_email, email_type="post_meeting_summary", meeting_id=meeting_obj_id),
+                        supabase.table("late_meeting").update({
+                            "post_email_sent": True
+                        }).eq("id", meeting_obj_id).execute(),
+                        return_exceptions=True
+                    )
+
+                    # Check for email operation failures
+                    for i, result in enumerate(email_results):
+                        if isinstance(result, Exception):
+                            raise Exception(f"Email operation {i} failed: {str(result)}")
+
+            except Exception as email_error:
+                logger.error(f"Email operations failed: {str(email_error)}")
+                # Don't retry the whole operation for email failures
+                # Just log and continue
+                logger.warning("Continuing despite email failure")
+
+            # If we get here, everything succeeded
+            logger.info(f"Successfully stored memory data for meeting {meeting_obj_id}")
+            return True
+
+        except Exception as e:
+            retry_count += 1
+            if retry_count < max_retries:
+                wait_time = backoff_time * (2 ** (retry_count - 1))  # Exponential backoff
+                logger.warning(f"Retrying memory storage in {wait_time} seconds... (attempt {retry_count + 1})")
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"Failed to store memory data after {max_retries} attempts: {str(e)}")
+                # Update the meeting record to indicate failure
+                try:
+                    await supabase.table("late_meeting").update({
+                        "memory_storage_failed": True,
+                        "memory_storage_error": str(e)
+                    }).eq("id", meeting_obj_id).execute()
+                except Exception as notify_error:
+                    logger.error(f"Failed to notify about memory storage failure: {str(notify_error)}")
+                return False
+
+    return False  # Should not reach here, but just in case
 
 @app.post("/generate_actions")
 async def generate_actions(request, body: ActionRequest):
@@ -1888,24 +1974,79 @@ async def health_check():
     return {"status": "ok"}
 
 
-async def store_transcript_file(transcript: str, meeting_obj_id: str):
-    """Store transcript file and update meeting record asynchronously"""
-    try:
-        unique_filename = f"{uuid.uuid4()}.txt"
-        file_bytes = transcript.encode('utf-8')
-        
-        storage_response = supabase.storage.from_("transcripts").upload(
-            path=unique_filename,
-            file=file_bytes,
-        )
-        file_url = supabase.storage.from_("transcripts").get_public_url(unique_filename)
-        
-        supabase.table("late_meeting")\
-            .update({"transcript": file_url})\
-            .eq("id", meeting_obj_id)\
-            .execute()
-    except Exception as e:
-        logger.error(f"Failed to store transcript: {str(e)}")
+async def store_transcript_file(transcript: str, meeting_obj_id: str, max_retries: int = 1):
+    """Store transcript file and update meeting record asynchronously with retries"""
+    retry_count = 0
+    backoff_time = 1  # Initial backoff time in seconds
+
+    while retry_count < max_retries:
+        try:
+            unique_filename = f"{uuid.uuid4()}.txt"
+            file_bytes = transcript.encode('utf-8')
+            
+            # First try to upload to storage
+            try:
+                storage_response = supabase.storage.from_("transcripts").upload(
+                    path=unique_filename,
+                    file=file_bytes,
+                )
+            except Exception as storage_error:
+                logger.error(f"Failed to upload transcript to storage (attempt {retry_count + 1}): {str(storage_error)}")
+                raise storage_error
+
+            # If storage upload succeeds, get the URL
+            try:
+                file_url = supabase.storage.from_("transcripts").get_public_url(unique_filename)
+            except Exception as url_error:
+                logger.error(f"Failed to get public URL (attempt {retry_count + 1}): {str(url_error)}")
+                # Try to cleanup the uploaded file
+                try:
+                    supabase.storage.from_("transcripts").remove([unique_filename])
+                except Exception as cleanup_error:
+                    logger.error(f"Failed to cleanup uploaded file after URL error: {str(cleanup_error)}")
+                raise url_error
+
+            # If we got the URL, update the database
+            try:
+                await supabase.table("late_meeting")\
+                    .update({"transcript": file_url})\
+                    .eq("id", meeting_obj_id)\
+                    .execute()
+                
+                logger.info(f"Successfully stored transcript for meeting {meeting_obj_id}")
+                return True  # Success
+                
+            except Exception as db_error:
+                logger.error(f"Failed to update database (attempt {retry_count + 1}): {str(db_error)}")
+                # Try to cleanup the uploaded file
+                try:
+                    supabase.storage.from_("transcripts").remove([unique_filename])
+                except Exception as cleanup_error:
+                    logger.error(f"Failed to cleanup uploaded file after database error: {str(cleanup_error)}")
+                raise db_error
+
+        except Exception as e:
+            retry_count += 1
+            if retry_count < max_retries:
+                wait_time = backoff_time * (2 ** (retry_count - 1))  # Exponential backoff
+                logger.warning(f"Retrying transcript storage in {wait_time} seconds... (attempt {retry_count + 1})")
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"Failed to store transcript after {max_retries} attempts: {str(e)}")
+                # Notify the application about the failure
+                try:
+                    await supabase.table("late_meeting")\
+                        .update({
+                            "transcript_storage_failed": True,
+                            "transcript_storage_error": str(e)
+                        })\
+                        .eq("id", meeting_obj_id)\
+                        .execute()
+                except Exception as notify_error:
+                    logger.error(f"Failed to notify about transcript storage failure: {str(notify_error)}")
+                return False  # Failed after all retries
+
+    return False  # Should not reach here, but just in case
 
 
 if __name__ == "__main__":
