@@ -547,13 +547,6 @@ def generate_notes(transcript):
         return tmp_notes if tmp_notes else "No notes found."
 
 
-@app.post("/generate_notes_api")
-async def generate_notes_api(request):
-    transcript = json.loads(request.body)["transcript"]
-    notes = generate_notes(transcript)
-    return {"notes": notes}
-
-
 def generate_title(summary):
     messages = [
         {
