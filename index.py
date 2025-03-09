@@ -416,53 +416,142 @@ def extract_action_items(transcript):
     return action_items
 
 
+def chunk_text(text, words_per_chunk=10000):
+    words = text.split()
+    chunks = []
+    
+    for i in range(0, len(words), words_per_chunk):
+        chunk = ' '.join(words[i:i + words_per_chunk])
+        chunks.append(chunk)
+    
+    return chunks
+
 def generate_notes(transcript):
-    messages = [
-        {
-            "role": "user",
-            "content": f"""You are an executive assistant tasked with taking notes from an online meeting transcript. You must produce the notes in Markdown format
-                Full transcript: {transcript}. Follow the JSON structure:""" + "{notes: meeting notes}" +
-                """Here's an example: ### Meeting Notes
+    # Check transcript length
+    word_count = len(transcript.split())
+    if word_count <= 20000:
+        # Use existing logic for shorter transcripts
+        messages = [
+            {
+                "role": "user",
+                "content": f"""You are an executive assistant tasked with taking notes from an online meeting transcript. You must produce the notes in Markdown format
+                    Full transcript: {transcript}. Follow the JSON structure:""" + "{notes: meeting notes}" +
+                    """Here's an example: ### Meeting Notes
 
-                    **Date:** January 15, 2025
+                        **Date:** January 15, 2025
 
-                    **Participants:**
-                    - You
-                    - Sanskar Jethi
+                        **Participants:**
+                        - You
+                        - Sanskar Jethi
 
-                    **Summary:**
-                    - Discussion about an option being fully received.
-                    - Confirmation that the system is running properly now.
-                    - Network issues have been resolved and are working perfectly.
+                        **Summary:**
+                        - Discussion about an option being fully received.
+                        - Confirmation that the system is running properly now.
+                        - Network issues have been resolved and are working perfectly.
 
-                    **Key Points:**
-                    - Option was fully received and confirmed.
-                    - System is confirmed to be running properly.
-                    - Network is functioning correctly.""" + 
-                    "Here's an example of what your JSON output should look like: " +
-                    """{
-                        "notes": "### Meeting Notes\n\n**Date:** February 19, 2025\n\n**Participants:**\n- You\n- Sanskar Jethi\n\n**Summary:**\n- Discussion about an option being fully received.\n- Confirmation that the system is running properly now.\n- Network issues have been resolved and are working perfectly.\n\n**Key Points:**\n- Option was fully received and confirmed.\n- System is confirmed to be running properly.\n- Network is functioning correctly."
-                    }"""
-        }
-    ]
+                        **Key Points:**
+                        - Option was fully received and confirmed.
+                        - System is confirmed to be running properly.
+                        - Network is functioning correctly.""" + 
+                        "Here's an example of what your JSON output should look like: " +
+                        """{
+                            "notes": "### Meeting Notes\n\n**Date:** February 19, 2025\n\n**Participants:**\n- You\n- Sanskar Jethi\n\n**Summary:**\n- Discussion about an option being fully received.\n- Confirmation that the system is running properly now.\n- Network issues have been resolved and are working perfectly.\n\n**Key Points:**\n- Option was fully received and confirmed.\n- System is confirmed to be running properly.\n- Network is functioning correctly."
+                        }"""
+            }
+        ]
 
-    try:
-        response = ai_client.chat_completions_create(
-            model="llama-3.3",
-            # model="gpt-4o",
-            messages=messages,
-            temperature=0.2,
-            response_format={"type": "json_object"}
-        )
-    except Exception as e:
-        if "failed_generation" in str(e):
-            # extract the failed_generation from the error message anyways
-            response = e["failed_generation"]
-        else:
-            return "No notes found."
+        try:
+            response = ai_client.chat_completions_create(
+                model="llama-3.3",
+                messages=messages,
+                temperature=0.2,
+                response_format={"type": "json_object"}
+            )
+        except Exception as e:
+            if "failed_generation" in str(e):
+                response = e["failed_generation"]
+            else:
+                return "No notes found."
 
-    notes = json.loads(response)["notes"]
-    return notes
+        notes = json.loads(response)["notes"]
+        return notes
+    
+    else:
+        # Handle long transcripts by chunking
+        chunks = chunk_text(transcript)
+        print(len(chunks))
+        tmp_notes = ""
+        
+        for i, chunk in enumerate(chunks):
+            messages = [
+                {
+                    "role": "system",
+                    "content": """You are a helpful assistant generating meeting notes in a json format.
+                    
+                    The json format is:
+                    {
+                        "edited": true/false,
+                        "notes": "meeting notes here if true, else null"
+                    }
+
+                    The transcript is too long to be processed at once, so we need to split it into chunks. 
+                    Keep the notes super short and concise.
+                    You have to review the current notes and add some points if needed. Dont remove any points or participants from the previous notes. Only add new points.
+
+                    You have to follow markdown format for the notes. Here's an example: ### Meeting Notes
+
+                        **Date:** January 15, 2025
+
+                        **Participants:**
+                        - You
+                        - John Doe
+
+                        **Summary:**
+                        - Discussion about an option being fully received.
+                        - Confirmation that the system is running properly now.
+                        - Network issues have been resolved and are working perfectly.
+
+                        **Key Points:**
+                        - Option was fully received and confirmed.
+                        - System is confirmed to be running properly.
+                        - Network is functioning correctly.
+
+                    Notes so far:
+                        """ + tmp_notes
+                    },
+                    {
+                        "role": "user",
+                        "content": "Here is the transcript chunk: " + chunk
+                    }
+                ]
+
+            try:
+                response = ai_client.chat_completions_create(
+                    model="llama-3.3",
+                    messages=messages,
+                    temperature=0.2,
+                    response_format={"type": "json_object"}
+                )
+                result = json.loads(response)
+                if result["edited"] and result["notes"]:
+                    tmp_notes = result["notes"]
+            
+            except Exception as e:
+                if "failed_generation" in str(e):
+                    tmp_notes = e["failed_generation"]
+                    continue
+                else:
+                    logger.error(f"Error processing chunk {i}: {str(e)}")
+                    return "No notes found."
+
+        return tmp_notes if tmp_notes else "No notes found."
+
+
+@app.post("/generate_notes_api")
+async def generate_notes_api(request):
+    transcript = json.loads(request.body)["transcript"]
+    notes = generate_notes(transcript)
+    return {"notes": notes}
 
 
 def generate_title(summary):
