@@ -74,7 +74,7 @@ RESEND_NOREPLY=your_resend_noreply
 # Optional if CLIENT_MODE=LOCAL
 OPENAI_API_KEY=your_openai_key
 GROQ_API_KEY=your_groq_key
-MXBAI_API_KEY=your_mxbai_api_key
+MISTRAL_API_KEY=your_mistral_api_key
 
 # Mode Selection
 CLIENT_MODE=ONLINE #set LOCAL to run local Ollama instead of OpenAI and Groq API and fast-embed instead of mistralai
