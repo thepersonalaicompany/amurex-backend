@@ -373,39 +373,106 @@ def get_cache_key(transcript: str) -> str:
 @lru_cache
 def extract_action_items(transcript):
     # Sample prompt to instruct the model on extracting action items per person
-    messages = [
-        {
-            "role": "user",
-            "content": """You are an executive assistant tasked with extracting action items from a meeting transcript.
-            For each person involved in the transcript, list their name with their respective action items, or state "No action items"
-            if there are none for that person.
-            
-            Write it as an html list in a json body. For example:
-            {"html":"
-            <h3>Arsen</h3>
-            <ul>
-              <li>action 1 bla bla</li>
-              <li>action 2 bla</li>
-            </ul>
-            <h3>Sanskar</h3>
-            <ul>
-              <li>action 1 bla bla</li>
-              <li>action 2 bla</li>
-            </ul>"
+    word_count = len(transcript.split())
+    if word_count <= 20000:
+        # Use existing logic for shorter transcripts
+        messages = [
+            {
+                "role": "user",
+                "content": """You are an executive assistant tasked with extracting action items from a meeting transcript.
+                For each person involved in the transcript, list their name with their respective action items, or state "No action items"
+                if there are none for that person.
+                
+                Write it as an html list in a json body. For example:
+                {"html":"
+                <h3>Arsen</h3>
+                <ul>
+                <li>action 1 bla bla</li>
+                <li>action 2 bla</li>
+                </ul>
+                <h3>Sanskar</h3>
+                <ul>
+                <li>action 1 bla bla</li>
+                <li>action 2 bla</li>
+                </ul>"
+                }
+                
+                Transcript: """ + transcript
             }
-            
-            Transcript: """ + transcript
-        }
-    ]
+        ]
 
-    # Sending the prompt to the AI model using chat completions
-    response = ai_client.chat_completions_create(
-        model="llama-3.3",
-        # model="gpt-4o",
-        messages=messages,
-        temperature=0.2,
-        response_format={"type": "json_object"}
-    )
+
+        try:
+            # Sending the prompt to the AI model using chat completions
+            response = ai_client.chat_completions_create(
+                model="llama-3.3",
+                # model="gpt-4o",
+                messages=messages,
+                temperature=0.2,
+                response_format={"type": "json_object"}
+            )
+        except Exception as e:
+            if "failed_generation" in str(e):
+                response = e["failed_generation"]
+            else:
+                return "No action items found."
+    else:
+        chunks = chunk_text(transcript)
+        tmp_action_items = ""
+
+        for i, chunk in enumerate(chunks):
+            messages = [
+                {
+                    "role": "system",
+                    "content": """
+                    The transcript is too long to be processed at once, so we need to split it into chunks. 
+                    Keep the action items super short and concise.
+                    You have to review the current action item list and add some points if needed. Dont remove any points or participants from the previous action item list. Only add new points. Don't add every single point, just the ones that are relevant to the main meeting discussion topic.
+
+                    You are an executive assistant tasked with extracting action items from a meeting transcript.
+                    
+                    For each person involved in the transcript, list their name with their respective action items, or state "No action items"
+                    if there are none for that person.
+                    
+                    Write it as an html list in a json body. For example:
+                    {"html":"
+                        <h3>Arsen</h3>
+                        <ul>
+                        <li>action 1 bla bla</li>
+                        <li>action 2 bla</li>
+                        </ul>
+                        <h3>Sanskar</h3>
+                        <ul>
+                        <li>action 1 bla bla</li>
+                        <li>action 2 bla</li>
+                        </ul>"}
+
+                    Action items so far:
+                        """ + tmp_action_items
+                    },
+                    {
+                        "role": "user",
+                        "content": "Here is the transcript chunk: " + chunk
+                    }
+                ]
+
+            try:
+                response = ai_client.chat_completions_create(
+                    model="llama-3.3",
+                    messages=messages,
+                    temperature=0.2,
+                    response_format={"type": "json_object"}
+                )
+                result = json.loads(response)
+                tmp_action_items = result["html"]
+
+            except Exception as e:
+                if "failed_generation" in str(e):
+                    tmp_action_items = e["failed_generation"]
+                    continue
+                else:
+                    logger.error(f"Error processing chunk {i}: {str(e)}")
+                    return "No action items found."
 
     if response is None:
         logger.error("Error extracting action items")
