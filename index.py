@@ -374,7 +374,7 @@ def get_cache_key(transcript: str) -> str:
 def extract_action_items(transcript):
     # Sample prompt to instruct the model on extracting action items per person
     word_count = len(transcript.split())
-    if word_count <= 20000:
+    if word_count <= 50000:
         # Use existing logic for shorter transcripts
         messages = [
             {
@@ -384,20 +384,29 @@ def extract_action_items(transcript):
                 if there are none for that person.
                 
                 Write it as an html list in a json body. For example:
-                {"html":"
-                <h3>Arsen</h3>
-                <ul>
-                <li>action 1 bla bla</li>
-                <li>action 2 bla</li>
-                </ul>
-                <h3>Sanskar</h3>
-                <ul>
-                <li>action 1 bla bla</li>
-                <li>action 2 bla</li>
-                </ul>"
+                {
+                    "action_items_list": [
+                        {
+                            "name": "Arsen",
+                            "action_items_list_html": [
+                                "<li>action 1</li>",
+                                "<li>action 2</li>"
+                            ]
+                        },
+                        {
+                            "name": "Sanskar",
+                            "action_items_list_html": [
+                                "<li>action 1</li>",
+                                "<li>action 2</li>"
+                            ]
+                        }
+                    ]
                 }
-                
-                Transcript: """ + transcript
+                """
+            },
+            {
+                "role": "user",
+                "content": "Here is the transcript: " + transcript
             }
         ]
 
@@ -406,7 +415,6 @@ def extract_action_items(transcript):
             # Sending the prompt to the AI model using chat completions
             response = ai_client.chat_completions_create(
                 model="llama-3.3",
-                # model="gpt-4o",
                 messages=messages,
                 temperature=0.2,
                 response_format={"type": "json_object"}
@@ -425,27 +433,35 @@ def extract_action_items(transcript):
                 {
                     "role": "system",
                     "content": """
-                    The transcript is too long to be processed at once, so we need to split it into chunks. 
-                    Keep the action items super short and concise.
-                    You have to review the current action item list and add some points if needed. Dont remove any points or participants from the previous action item list. Only add new points. Don't add every single point, just the ones that are relevant to the main meeting discussion topic.
-
                     You are an executive assistant tasked with extracting action items from a meeting transcript.
                     
-                    For each person involved in the transcript, list their name with their respective action items, or state "No action items"
-                    if there are none for that person.
+                    The transcript is too long to be processed at once, so we need to split it into chunks. 
+                    You have to review the current action item list and add some points if needed. 
+                    Keep the action items super short and concise.
+                    Don't add every single point just for the sake of it, only add the ones that are relevant to the main meeting discussion topic.
+                    Only add points that are actionable and specific. Dont add points that are vague or unclear, such as "discuss the future of the company" or "increase the revenue".
+
+                    For each person involved in the transcript, list their name with their respective action items, or state "No action items" if there are none for that person.
                     
                     Write it as an html list in a json body. For example:
-                    {"html":"
-                        <h3>Arsen</h3>
-                        <ul>
-                        <li>action 1 bla bla</li>
-                        <li>action 2 bla</li>
-                        </ul>
-                        <h3>Sanskar</h3>
-                        <ul>
-                        <li>action 1 bla bla</li>
-                        <li>action 2 bla</li>
-                        </ul>"}
+                    {
+                        "action_items_list": [
+                            {
+                                "name": "Arsen",
+                                "action_items_list_html": [
+                                    "<li>action 1 bla bla</li>",
+                                    "<li>action 2 bla</li>"
+                                ]
+                            },
+                            {
+                                "name": "Sanskar",
+                                "action_items_list_html": [
+                                    "<li>action 1 bla bla</li>",
+                                    "<li>action 2 bla</li>"
+                                ]
+                            }
+                        ]
+                    }
 
                     Action items so far:
                         """ + tmp_action_items
@@ -464,7 +480,7 @@ def extract_action_items(transcript):
                     response_format={"type": "json_object"}
                 )
                 result = json.loads(response)
-                tmp_action_items = result["html"]
+                tmp_action_items = str(result["action_items_list"])
 
             except Exception as e:
                 if "failed_generation" in str(e):
@@ -479,11 +495,26 @@ def extract_action_items(transcript):
         return "No action items found."
 
 
-    action_items = json.loads(response)["html"]
-    return action_items
+    action_items = json.loads(response)["action_items_list"]
+    result = ""
+
+    for item in action_items:
+        result += f"<h3>{item['name']}</h3>"
+        result += "<ul>"
+        for action_item in item["action_items_list_html"]:
+            result += action_item
+        result += "</ul>"
+
+    return result
 
 
-def chunk_text(text, words_per_chunk=10000):
+@app.post("/action_items")
+def action_items(request):
+    transcript = json.loads(request.body).get("transcript")
+    return extract_action_items(transcript)
+
+
+def chunk_text(text, words_per_chunk=50000):
     words = text.split()
     chunks = []
     
