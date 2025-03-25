@@ -26,6 +26,8 @@ import redis
 from mistralai import Mistral
 import re
 import multiprocessing
+from google import genai
+from google.genai import types
 
 
 redis_user = os.getenv("REDIS_USERNAME")
@@ -62,6 +64,7 @@ class AIClientAdapter:
         self.ollama_url = f"{ollama_url}/api/chat"
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        self.gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     def chat_completions_create(self, model, messages, temperature=0.2, response_format=None):
         # expect llama3.2 as the model name
@@ -72,6 +75,11 @@ class AIClientAdapter:
         groq = {
             "llama-3.3": "llama-3.3-70b-versatile",
             "llama-3.2": "llama3-70b-8192"
+        }
+        gemini = {
+            "gemini-1.5-flash": "gemini-1.5-flash",
+            "gemini-1.5-pro": "gemini-1.5-pro",
+            "gemini-2.0-flash": "gemini-2.0-flash"
         }
         if self.client_mode == "LOCAL":
             # Use Ollama client
@@ -91,13 +99,75 @@ class AIClientAdapter:
                     temperature=temperature,
                     response_format=response_format
                 ).choices[0].message.content
-            else:
+            elif "llama" in model:
                 return self.groq_client.chat.completions.create(
                     model=groq[model],
                     messages=messages,
                     temperature=temperature,
                     response_format=response_format
                 ).choices[0].message.content
+            elif "gemini" in model:
+                system_instruction = messages[0]["content"]
+                transcript = messages[1]["content"]
+
+                contents = [
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part.from_text(text=transcript),
+                        ],
+                    ),
+                ]
+
+                generate_content_config = types.GenerateContentConfig(
+                    temperature=1,
+                    top_p=0.95,
+                    top_k=40,
+                    response_mime_type="application/json",
+                    response_schema=genai.types.Schema(
+                        type=genai.types.Type.OBJECT,
+                        required=["action_items_list", "notes"],
+                        properties={
+                            "action_items_list": genai.types.Schema(
+                                type=genai.types.Type.ARRAY,
+                                items=genai.types.Schema(
+                                    type=genai.types.Type.OBJECT,
+                                    required=["name", "action_items_list_html"],
+                                    properties={
+                                        "name": genai.types.Schema(
+                                            type=genai.types.Type.STRING,
+                                            description="Person's name",
+                                        ),
+                                        "action_items_list_html": genai.types.Schema(
+                                            type=genai.types.Type.ARRAY,
+                                            items=genai.types.Schema(
+                                                type=genai.types.Type.STRING,
+                                                description="HTML list item (<li>action item</li>)",
+                                            ),
+                                        ),
+                                    },
+                                ),
+                            ),
+                            "notes": genai.types.Schema(
+                                type=genai.types.Type.STRING,
+                                description="Meeting notes in Markdown format",
+                            ),
+                        },
+                    ),
+                    system_instruction=[
+                        types.Part.from_text(text=system_instruction),
+                    ],
+                )
+
+                response_text = ""
+                for chunk in self.gemini_client.models.generate_content_stream(
+                    model=gemini[model],
+                    contents=contents,
+                    config=generate_content_config,
+                ):
+                    response_text += chunk.text
+
+                return response_text
 
 
 class EmbeddingAdapter:
@@ -524,6 +594,59 @@ def chunk_text(text, words_per_chunk=50000):
     
     return chunks
 
+
+def generate_everything(transcript):
+    model = "gemini-1.5-pro"
+    
+    system_instruction = """You are an executive assistant tasked with extracting action items and taking notes from a meeting transcript. Try to be as accurate as possible. And keep the notes concise and to the point.
+
+                For action items: For each person involved in the transcript, list their name with their respective action items, or don't list the person if there are no action items for that person.
+
+                For notes: You must produce the notes in Markdown format. Follow this structure:
+                ### Meeting Notes
+                **Date:** [Extract or infer date from transcript]
+                **Participants:** [List all participants mentioned in the transcript]
+                **Summary:** [Brief bullet points summarizing the key topics discussed]
+                **Key Points:** [Bullet points of the most important information from the meeting]
+
+                Here's an example of what your notes should look like:
+                ### Meeting Notes
+                **Date:** February 19, 2025
+                **Participants:**
+                - You
+                - Sanskar Jethi
+                **Summary:**
+                - Discussion about an option being fully received.
+                - Confirmation that the system is running properly now.
+                - Network issues have been resolved and are working perfectly.
+                **Key Points:**
+                - Option was fully received and confirmed.
+                - System is confirmed to be running properly.
+                - Network is functioning correctly."""
+    
+    user_message = f"Here's the transcript: {transcript}"
+
+    messages = [
+        {
+            "role": "system",
+            "content": system_instruction
+        },
+        {
+            "role": "user",
+            "content": user_message
+        }
+    ]
+
+    response = ai_client.chat_completions_create(
+        model=model,
+        messages=messages,
+        temperature=0.2,
+        response_format={"type": "json_object"}
+    )
+
+    return response
+
+
 def generate_notes(transcript):
     # Check transcript length
     word_count = len(transcript.split())
@@ -577,7 +700,6 @@ def generate_notes(transcript):
     else:
         # Handle long transcripts by chunking
         chunks = chunk_text(transcript)
-        print(len(chunks))
         tmp_notes = ""
         
         for i, chunk in enumerate(chunks):
@@ -1425,8 +1547,19 @@ def create_memory_object(transcript):
     logger.info("Cache miss - generating new results")
     
     # Generate new results if not in cache
-    action_items = extract_action_items(transcript)
-    notes_content = generate_notes(transcript)
+    # action_items = extract_action_items(transcript)
+    # notes_content = generate_notes(transcript)
+    summary = json.loads(generate_everything(transcript))
+    action_items_list = summary["action_items_list"]
+    action_items = ""
+    for item in action_items_list:
+        action_items += f"<h3>{item['name']}</h3>"
+        action_items += "<ul>"
+        for action_item in item["action_items_list_html"]:
+            action_items += action_item
+        action_items += "</ul>"
+
+    notes_content = summary["notes"]
     
     # Ensure notes_content is a string before generating title
     if isinstance(notes_content, list):
@@ -1954,7 +2087,7 @@ async def get_late_summary(path_params):
     if not meeting or not meeting['transcript']:
         return {"late_summary": ""}
 
-    print("This is the late meeting transcript: ", meeting_id,  meeting['transcript'])
+    # print("This is the late meeting transcript: ", meeting_id,  meeting['transcript'])
     late_summary = generate_notes(meeting['transcript'])
     return {"late_summary": late_summary}
 
