@@ -1,5 +1,5 @@
 robyn==0.64.2
-google-genai==1.7.0
+google-genai
 openai==1.54.1
 requests
 requests==2.31.0
