@@ -1562,21 +1562,25 @@ class ActionItemsRequest(Body):
 def create_memory_object(transcript):
     # Try to get from cache
     logger.info("Cache miss - generating new results")
-    
-    # Generate new results if not in cache
-    # action_items = extract_action_items(transcript)
-    # notes_content = generate_notes(transcript)
-    summary = json.loads(generate_everything(transcript))
-    action_items_list = summary["action_items_list"]
-    action_items = ""
-    for item in action_items_list:
-        action_items += f"<h3>{item['name']}</h3>"
-        action_items += "<ul>"
-        for action_item in item["action_items_list_html"]:
-            action_items += action_item
-        action_items += "</ul>"
 
-    notes_content = summary["notes"]
+    # Generate new results if not in cache
+    word_count = len(transcript.split())
+
+    if word_count <= 20000:
+        action_items = extract_action_items(transcript)
+        notes_content = generate_notes(transcript)
+    else:
+        summary = json.loads(generate_everything(transcript))
+        action_items_list = summary["action_items_list"]
+        action_items = ""
+        for item in action_items_list:
+            action_items += f"<h3>{item['name']}</h3>"
+            action_items += "<ul>"
+            for action_item in item["action_items_list_html"]:
+                action_items += action_item
+            action_items += "</ul>"
+
+        notes_content = summary["notes"]
     
     # Ensure notes_content is a string before generating title
     if isinstance(notes_content, list):
