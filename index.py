@@ -58,13 +58,17 @@ load_dotenv()
 # Initialize database manager
 db = DatabaseManager()
 
+openai_api_key = os.getenv("OPENAI_API_KEY")
+groq_api_key = os.getenv("GROQ_API_KEY")
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+
 class AIClientAdapter:
     def __init__(self, client_mode, ollama_url):
         self.client_mode = client_mode
         self.ollama_url = f"{ollama_url}/api/chat"
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        self.gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.openai_client = OpenAI(api_key=openai_api_key)
+        self.groq_client = Groq(api_key=groq_api_key)
+        self.gemini_client = genai.Client(api_key=gemini_api_key)
 
     def chat_completions_create(self, model, messages, temperature=0.2, response_format=None):
         # expect llama3.2 as the model name
@@ -602,6 +606,19 @@ def generate_everything(transcript):
 
                 For action items: For each person involved in the transcript, list their name with their respective action items, or don't list the person if there are no action items for that person.
 
+                Here's an example of what your action items should look like:
+                {
+                    "action_items_list": [
+                        {
+                            "name": "Arsen",
+                            "action_items_list_html": [
+                                "<li>action 1</li>",
+                                "<li>action 2</li>"
+                            ]
+                        }
+                    ]
+                }
+
                 For notes: You must produce the notes in Markdown format. Follow this structure:
                 ### Meeting Notes
                 **Date:** [Extract or infer date from transcript]
@@ -611,15 +628,15 @@ def generate_everything(transcript):
 
                 Here's an example of what your notes should look like:
                 ### Meeting Notes
-                **Date:** February 19, 2025
-                **Participants:**
+                \n**Date:** February 19, 2025
+                \n**Participants:**\n
                 - You
                 - Sanskar Jethi
-                **Summary:**
+                \n**Summary:**\n
                 - Discussion about an option being fully received.
                 - Confirmation that the system is running properly now.
                 - Network issues have been resolved and are working perfectly.
-                **Key Points:**
+                \n**Key Points:**\n
                 - Option was fully received and confirmed.
                 - System is confirmed to be running properly.
                 - Network is functioning correctly."""

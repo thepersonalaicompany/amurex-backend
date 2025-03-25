@@ -1,6 +1,8 @@
 robyn==0.64.2
-openai
+google-genai
+openai==1.54.1
 requests
+requests==2.31.0
 redis==5.0.1
 websockets==13.1
 numpy==2.1.3
