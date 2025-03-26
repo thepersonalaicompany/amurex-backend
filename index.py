@@ -501,7 +501,7 @@ def extract_action_items(transcript):
             )
         except Exception as e:
             if "failed_generation" in str(e):
-                return e["failed_generation"]
+                response = e["failed_generation"]
             else:
                 return "No action items found."
     else:
