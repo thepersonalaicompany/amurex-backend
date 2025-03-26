@@ -28,6 +28,7 @@ import re
 import multiprocessing
 from google import genai
 from google.genai import types
+import groq
 
 
 redis_user = os.getenv("REDIS_USERNAME")
@@ -76,7 +77,7 @@ class AIClientAdapter:
             "llama3.2": "llama3.2",
             "gpt-4o": "llama3.2"
         }
-        groq = {
+        groq_mapping = {
             "llama-3.3": "llama-3.3-70b-versatile",
             "llama-3.2": "llama3-70b-8192"
         }
@@ -104,12 +105,17 @@ class AIClientAdapter:
                     response_format=response_format
                 ).choices[0].message.content
             elif "llama" in model:
-                return self.groq_client.chat.completions.create(
-                    model=groq[model],
-                    messages=messages,
-                    temperature=temperature,
-                    response_format=response_format
-                ).choices[0].message.content
+                try:
+                    return self.groq_client.chat.completions.create(
+                        model=groq_mapping[model],
+                        messages=messages,
+                        temperature=temperature,
+                        response_format=response_format
+                    ).choices[0].message.content
+                except groq.BadRequestError as e:
+                    logger.error(f"Error processing chat completions: {str(e)}")
+                    return e.response.json
+
             elif "gemini" in model:
                 system_instruction = messages[0]["content"]
                 transcript = messages[1]["content"]
@@ -495,7 +501,7 @@ def extract_action_items(transcript):
             )
         except Exception as e:
             if "failed_generation" in str(e):
-                response = e["failed_generation"]
+                return e["failed_generation"]
             else:
                 return "No action items found."
     else:
