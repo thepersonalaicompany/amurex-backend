@@ -584,12 +584,6 @@ def extract_action_items(transcript):
     return result
 
 
-@app.post("/action_items")
-def action_items(request):
-    transcript = json.loads(request.body).get("transcript")
-    return extract_action_items(transcript)
-
-
 def chunk_text(text, words_per_chunk=50000):
     words = text.split()
     chunks = []
@@ -663,7 +657,24 @@ def generate_everything(transcript):
         response_format={"type": "json_object"}
     )
 
-    return response
+    summary = json.loads(response)
+    action_items_list = summary["action_items_list"]
+    action_items = ""
+    for item in action_items_list:
+        action_items += f"<h3>{item['name']}</h3>"
+        action_items += "<ul>"
+        for action_item in item["action_items_list_html"]:
+            action_items += action_item
+        action_items += "</ul>"
+
+    notes_content = summary["notes"]
+
+    result = {
+        "action_items": action_items,
+        "notes_content": notes_content
+    }
+
+    return result
 
 
 def generate_notes(transcript):
@@ -808,7 +819,7 @@ def generate_title(summary):
     ]
 
     response = ai_client.chat_completions_create(
-        model="llama-3.3",
+        model="gpt-4o",
         # model="gpt-4o",
         messages=messages,
         temperature=0.2,
@@ -1567,24 +1578,25 @@ def create_memory_object(transcript):
     logger.info("Cache miss - generating new results")
 
     # Generate new results if not in cache
-    word_count = len(transcript.split())
+    # word_count = len(transcript.split())
 
-    if word_count < 0:
-        action_items = extract_action_items(transcript)
-        notes_content = generate_notes(transcript)
-    else:
-        summary = json.loads(generate_everything(transcript))
-        action_items_list = summary["action_items_list"]
-        action_items = ""
-        for item in action_items_list:
-            action_items += f"<h3>{item['name']}</h3>"
-            action_items += "<ul>"
-            for action_item in item["action_items_list_html"]:
-                action_items += action_item
-            action_items += "</ul>"
+    # if word_count < 0:
+    #     action_items = extract_action_items(transcript)
+    #     notes_content = generate_notes(transcript)
+    # else:
+    res = json.loads(generate_everything(transcript))
+    notes_content = res["notes"]
+    action_items = res["action_items"]
+    # action_items_list = summary["action_items_list"]
+    # action_items = ""
+    # for item in action_items_list:
+    #     action_items += f"<h3>{item['name']}</h3>"
+    #     action_items += "<ul>"
+    #     for action_item in item["action_items_list_html"]:
+    #         action_items += action_item
+    #     action_items += "</ul>"
+    # notes_content = summary["notes"]
 
-        notes_content = summary["notes"]
-    
     # Ensure notes_content is a string before generating title
     if isinstance(notes_content, list):
         notes_content = '\n'.join(notes_content)
@@ -1631,14 +1643,20 @@ async def end_meeting(request: Request, body: EndMeetingRequest):
         # this is a temporary fix for the issue
         # we need to fix this in the future
         # TODO: figure out why tf are we not sending user_id from the chrome extension
+        res = json.loads(generate_everything(transcript))
+        notes_content = res["notes"]
+        action_items = res["action_items"]
         return {
-            "notes_content": generate_notes(transcript),
-            "action_items": extract_action_items(transcript)
+            "notes_content": notes_content,
+            "action_items": action_items
         }
     
     if not meeting_id:
-        action_items = extract_action_items(transcript)
-        notes_content = generate_notes(transcript)
+        # action_items = extract_action_items(transcript)
+        # notes_content = generate_notes(transcript)
+        res = json.loads(generate_everything(transcript))
+        notes_content = res["notes"]
+        action_items = res["action_items"]
         
         return {
             "notes_content": notes_content,
@@ -1649,8 +1667,11 @@ async def end_meeting(request: Request, body: EndMeetingRequest):
     is_memory_enabled = check_memory_enabled(user_id)
 
     if not is_memory_enabled:
-        notes_content = generate_notes(transcript)
-        action_items = extract_action_items(transcript)
+        # notes_content = generate_notes(transcript)
+        # action_items = extract_action_items(transcript)
+        res = json.loads(generate_everything(transcript))
+        notes_content = res["notes"]
+        action_items = res["action_items"]
         return {
             "notes_content": notes_content,
             "action_items": action_items
