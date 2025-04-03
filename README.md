@@ -102,7 +102,7 @@ python -m venv venv
 
 ```
 ⚠ **Caution:**  
-If running the project **locally**, make sure to **comment out** `fastembed==0.4.2` in `requirements.txt`.  
+If running the project **locally**, make sure to **comment out** `fastembed==0.4.2` from `requirements.txt`.  
 
 pip install -r requirements.txt
 ```
