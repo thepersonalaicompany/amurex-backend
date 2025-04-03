@@ -20,6 +20,7 @@ from robyn import Robyn, ALLOW_CORS, WebSocket, Response, Request
 from robyn.types import Body
 import logging
 from database.db_manager import DatabaseManager
+from datetime import datetime
 from functools import lru_cache
 import asyncio
 import redis
@@ -591,6 +592,7 @@ def chunk_text(text, words_per_chunk=50000):
     
     return chunks
 
+current_date = datetime.today().strftime("%B %d, %Y")
 
 def generate_everything(transcript):
     model = "gemini-1.5-pro"
@@ -614,14 +616,14 @@ def generate_everything(transcript):
 
                 For notes: You must produce the notes in Markdown format. Follow this structure:
                 ### Meeting Notes
-                **Date:** [Extract or infer date from transcript]
+                **Date:** {current_date}
                 **Participants:** [List all participants mentioned in the transcript]
                 **Summary:** [Brief bullet points summarizing the key topics discussed]
                 **Key Points:** [Bullet points of the most important information from the meeting]
 
                 Here's an example of what your notes should look like:
                 ### Meeting Notes
-                \n**Date:** February 19, 2025
+                \n**Date:** {current_date}
                 \n**Participants:**\n
                 - You
                 - Sanskar Jethi
@@ -685,7 +687,7 @@ def generate_notes(transcript):
                     Full transcript: {transcript}. Follow the JSON structure:""" + "{notes: meeting notes}" +
                     """Here's an example: ### Meeting Notes
 
-                        **Date:** January 15, 2025
+                        **Date:** {current_date}
 
                         **Participants:**
                         - You
@@ -702,7 +704,7 @@ def generate_notes(transcript):
                         - Network is functioning correctly.""" + 
                         "Here's an example of what your JSON output should look like: " +
                         """{
-                            "notes": "### Meeting Notes\n\n**Date:** February 19, 2025\n\n**Participants:**\n- You\n- Sanskar Jethi\n\n**Summary:**\n- Discussion about an option being fully received.\n- Confirmation that the system is running properly now.\n- Network issues have been resolved and are working perfectly.\n\n**Key Points:**\n- Option was fully received and confirmed.\n- System is confirmed to be running properly.\n- Network is functioning correctly."
+                            "notes": "### Meeting Notes\n \n**Date:** {current_date} \n\n**Participants:**\n- You\n- Sanskar Jethi\n\n**Summary:**\n- Discussion about an option being fully received.\n- Confirmation that the system is running properly now.\n- Network issues have been resolved and are working perfectly.\n\n**Key Points:**\n- Option was fully received and confirmed.\n- System is confirmed to be running properly.\n- Network is functioning correctly."
                         }"""
             }
         ]
@@ -746,7 +748,7 @@ def generate_notes(transcript):
 
                     You have to follow markdown format for the notes. Here's an example: ### Meeting Notes
 
-                        **Date:** January 15, 2025
+                        **Date:** {current_date}
 
                         **Participants:**
                         - You
