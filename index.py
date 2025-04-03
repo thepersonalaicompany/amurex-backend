@@ -704,7 +704,7 @@ def generate_notes(transcript):
                         - Network is functioning correctly.""" + 
                         "Here's an example of what your JSON output should look like: " +
                         """{
-                            "notes": "### Meeting Notes\n \n**Date:** {current_date} \n\n**Participants:**\n- You\n- Sanskar Jethi\n\n**Summary:**\n- Discussion about an option being fully received.\n- Confirmation that the system is running properly now.\n- Network issues have been resolved and are working perfectly.\n\n**Key Points:**\n- Option was fully received and confirmed.\n- System is confirmed to be running properly.\n- Network is functioning correctly."
+                            "notes": "### Meeting Notes\n\n**Date:** {current_date} \n\n**Participants:**\n- You\n- Sanskar Jethi\n\n**Summary:**\n- Discussion about an option being fully received.\n- Confirmation that the system is running properly now.\n- Network issues have been resolved and are working perfectly.\n\n**Key Points:**\n- Option was fully received and confirmed.\n- System is confirmed to be running properly.\n- Network is functioning correctly."
                         }"""
             }
         ]
