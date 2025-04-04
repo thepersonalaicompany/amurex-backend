@@ -101,6 +101,9 @@ python -m venv venv
 2. Install dependencies:
 
 ```
+⚠ **Caution:**  
+If running the project **locally**, make sure to **comment out** `fastembed==0.4.2` from `requirements.txt`.  
+
 pip install -r requirements.txt
 ```
 
