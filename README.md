@@ -64,6 +64,7 @@ Create a `.env` file in the root directory with the following variables:
 # Required
 SUPABASE_URL=your_project_url
 SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 REDIS_USERNAME=your_redis_username
 REDIS_URL=your_redis_host
 REDIS_PASSWORD=your_redis_password
